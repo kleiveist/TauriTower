@@ -1,0 +1,30 @@
+# Documentation Index
+
+This directory is split by audience and decision type.
+
+## Architecture Decision Records
+
+- [0001 - Tauri Target Architecture](adr/0001-tauri-target-architecture.md)
+- [0002 - Repository and Tooling Boundaries](adr/0002-repo-tooling-boundaries.md)
+
+## Developer Docs
+
+- [Porting Workflow](dev/porting-workflow.md)
+- [Implementation Order](dev/implementation-order.md)
+
+## Tooling Docs
+
+- [Tooling Overview](tools/README.md)
+- [Control CLI Command Matrix](tools/control-cli.md)
+- [Environment Variables](tools/environment-variables.md)
+- [Tool Selection Guide](tools/tool-selection.md)
+
+## User Docs
+
+- [Run and Play Guide](usr/run-play-guide.md)
+
+## Governance Notes
+
+- All runtime architecture decisions should reference ADR-0001.
+- All repo-structure and tooling-boundary decisions should reference ADR-0002.
+- `tools/control.py` is the canonical operator entrypoint for this repository.
