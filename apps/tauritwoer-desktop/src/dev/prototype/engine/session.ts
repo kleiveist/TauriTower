@@ -1,0 +1,502 @@
+import { BOSS_PROFILES } from "../data/bosses";
+import { PATH_POINTS } from "../data/constants";
+import { DIFFICULTIES } from "../data/difficulties";
+import { ENEMY_ARCHETYPES } from "../data/enemies";
+import { TOWER_TYPES } from "../data/towers";
+import { updateBullet } from "../domain/bullet";
+import { updateEnemy } from "../domain/enemy";
+import { validTowerPosition } from "../domain/placement";
+import { updateTower } from "../domain/tower";
+import { bossStageFromSpawnKey, buildWavePlan, previewWaveInfo } from "../domain/waves";
+import { pickRng, rngRange } from "../rng";
+import type {
+  DifficultyName,
+  DifficultyProfile,
+  GameAction,
+  GameSession,
+  GameSessionOptions,
+  GameSnapshot,
+  ResetOptions,
+  SpawnKey,
+} from "../types";
+
+interface MutableSessionState {
+  difficulty: DifficultyProfile;
+  snapshot: GameSnapshot;
+  nextEnemyId: number;
+  nextTowerId: number;
+  nextBulletId: number;
+}
+
+export function createGameSession(options: GameSessionOptions = {}): GameSession {
+  return new GameSessionImpl(options);
+}
+
+class GameSessionImpl implements GameSession {
+  private readonly rng: ReturnType<typeof pickRng>;
+
+  private readonly defaultMaxLevelOverride: number | undefined;
+
+  private readonly state: MutableSessionState;
+
+  constructor(options: GameSessionOptions) {
+    this.rng = pickRng(options.rng, options.seed);
+    this.defaultMaxLevelOverride = options.maxLevelOverride;
+
+    const difficultyName = options.initialDifficulty ?? "leicht";
+    const difficulty = DIFFICULTIES[difficultyName];
+
+    this.state = {
+      difficulty,
+      snapshot: createInitialSnapshot(
+        "menu",
+        difficultyName,
+        difficulty,
+        options.maxLevelOverride,
+      ),
+      nextEnemyId: 1,
+      nextTowerId: 1,
+      nextBulletId: 1,
+    };
+
+    if (options.initialDifficulty) {
+      this.reset(options.initialDifficulty);
+    }
+  }
+
+  reset(difficultyName: DifficultyName, options?: ResetOptions): void {
+    const difficulty = DIFFICULTIES[difficultyName];
+    const maxLevel = options?.maxLevelOverride ?? this.defaultMaxLevelOverride ?? difficulty.maxLevel;
+
+    this.state.difficulty = difficulty;
+    this.state.snapshot = {
+      state: "playing",
+      difficultyName,
+      level: 1,
+      maxLevel,
+      money: difficulty.startMoney,
+      lives: difficulty.lives,
+      towers: [],
+      enemies: [],
+      bullets: [],
+      selectedTowerName: null,
+      waveActive: false,
+      wavePlan: [],
+      spawnTimer: 0,
+      spawnInterval: 0.52,
+      spawnedThisWave: 0,
+      totalWaveEnemies: 0,
+      currentWaveBossName: "",
+      message: "Leertaste startet die erste Welle",
+      messageTimer: 4.0,
+      nextWavePreview: previewWaveInfo(1, difficulty),
+    };
+    this.state.nextEnemyId = 1;
+    this.state.nextTowerId = 1;
+    this.state.nextBulletId = 1;
+  }
+
+  applyAction(action: GameAction): void {
+    switch (action.type) {
+      case "chooseDifficulty": {
+        this.reset(action.difficulty);
+        break;
+      }
+      case "startWave": {
+        if (this.state.snapshot.state === "playing") {
+          this.startWave();
+        }
+        break;
+      }
+      case "selectTower": {
+        if (this.state.snapshot.state === "playing") {
+          this.trySelectTower(action.tower);
+        }
+        break;
+      }
+      case "clearSelection": {
+        this.state.snapshot.selectedTowerName = null;
+        break;
+      }
+      case "placeTower": {
+        if (this.state.snapshot.state === "playing") {
+          this.placeTower(action.position.x, action.position.y);
+        }
+        break;
+      }
+      case "restart": {
+        if (this.state.snapshot.state !== "menu") {
+          this.reset(this.state.snapshot.difficultyName);
+        }
+        break;
+      }
+      case "returnToMenu": {
+        this.state.snapshot.state = "menu";
+        this.state.snapshot.selectedTowerName = null;
+        this.showMessage("", 0);
+        break;
+      }
+      default: {
+        assertUnreachable(action);
+      }
+    }
+
+    this.refreshWavePreview();
+  }
+
+  tick(dtSeconds: number): void {
+    if (!Number.isFinite(dtSeconds) || dtSeconds <= 0) {
+      return;
+    }
+
+    const snapshot = this.state.snapshot;
+
+    if (snapshot.state !== "playing") {
+      this.updateMessageTimer(dtSeconds);
+      this.refreshWavePreview();
+      return;
+    }
+
+    this.updateMessageTimer(dtSeconds);
+
+    if (snapshot.waveActive && snapshot.wavePlan.length > 0) {
+      snapshot.spawnTimer -= dtSeconds;
+      if (snapshot.spawnTimer <= 0) {
+        const enemyType = snapshot.wavePlan.shift() as SpawnKey;
+        this.spawnEnemy(enemyType);
+        snapshot.spawnedThisWave += 1;
+        snapshot.spawnTimer = snapshot.spawnInterval * (enemyType.startsWith("boss_") ? 1.6 : 1.0);
+      }
+    }
+
+    for (const enemy of snapshot.enemies) {
+      updateEnemy(enemy, dtSeconds, PATH_POINTS);
+      if (enemy.reachedEnd && !enemy.dead) {
+        enemy.dead = true;
+        snapshot.lives -= enemy.lifeDamage;
+      }
+    }
+
+    for (const tower of snapshot.towers) {
+      updateTower(
+        tower,
+        dtSeconds,
+        snapshot.enemies,
+        snapshot.bullets,
+        () => this.state.nextBulletId++,
+      );
+    }
+
+    for (const bullet of snapshot.bullets) {
+      const killed = updateBullet(bullet, dtSeconds, snapshot.enemies);
+      if (killed.length === 0) {
+        continue;
+      }
+
+      const uniqueKills = new Map<number, number>();
+      for (const enemy of killed) {
+        uniqueKills.set(enemy.id, enemy.reward);
+      }
+      for (const reward of uniqueKills.values()) {
+        snapshot.money += reward;
+      }
+    }
+
+    snapshot.enemies = snapshot.enemies.filter((enemy) => !enemy.dead);
+    snapshot.bullets = snapshot.bullets.filter((bullet) => !bullet.dead);
+
+    if (snapshot.waveActive && snapshot.wavePlan.length === 0 && snapshot.enemies.length === 0) {
+      snapshot.waveActive = false;
+      snapshot.level += 1;
+      if (snapshot.level > snapshot.maxLevel) {
+        snapshot.state = "victory";
+        this.showMessage("Sieg! Alle Level abgeschlossen.", 5);
+      } else {
+        snapshot.money += 28 + snapshot.level * 2;
+        this.showMessage(`Level geschafft. Naechstes Level: ${snapshot.level}`, 3);
+      }
+    }
+
+    if (snapshot.lives <= 0) {
+      snapshot.state = "game_over";
+      this.showMessage("Game Over", 5);
+    }
+
+    this.refreshWavePreview();
+  }
+
+  getSnapshot(): GameSnapshot {
+    const source = this.state.snapshot;
+
+    return {
+      state: source.state,
+      difficultyName: source.difficultyName,
+      level: source.level,
+      maxLevel: source.maxLevel,
+      money: source.money,
+      lives: source.lives,
+      selectedTowerName: source.selectedTowerName,
+      waveActive: source.waveActive,
+      wavePlan: [...source.wavePlan],
+      spawnTimer: source.spawnTimer,
+      spawnInterval: source.spawnInterval,
+      spawnedThisWave: source.spawnedThisWave,
+      totalWaveEnemies: source.totalWaveEnemies,
+      currentWaveBossName: source.currentWaveBossName,
+      message: source.message,
+      messageTimer: source.messageTimer,
+      towers: source.towers.map((tower) => ({
+        ...tower,
+        pos: { x: tower.pos.x, y: tower.pos.y },
+      })),
+      enemies: source.enemies.map((enemy) => ({
+        ...enemy,
+        pos: { x: enemy.pos.x, y: enemy.pos.y },
+        color: [...enemy.color] as [number, number, number],
+      })),
+      bullets: source.bullets.map((bullet) => ({
+        ...bullet,
+        pos: { x: bullet.pos.x, y: bullet.pos.y },
+        color: [...bullet.color] as [number, number, number],
+      })),
+      nextWavePreview: { ...source.nextWavePreview },
+    };
+  }
+
+  private updateMessageTimer(dtSeconds: number): void {
+    const snapshot = this.state.snapshot;
+    if (snapshot.messageTimer <= 0) {
+      return;
+    }
+
+    snapshot.messageTimer -= dtSeconds;
+    if (snapshot.messageTimer <= 0) {
+      snapshot.message = "";
+      snapshot.messageTimer = 0;
+    }
+  }
+
+  private showMessage(text: string, seconds = 2.0): void {
+    this.state.snapshot.message = text;
+    this.state.snapshot.messageTimer = seconds;
+  }
+
+  private refreshWavePreview(): void {
+    this.state.snapshot.nextWavePreview = previewWaveInfo(
+      this.state.snapshot.level,
+      this.state.difficulty,
+    );
+  }
+
+  private startWave(): void {
+    const snapshot = this.state.snapshot;
+    if (snapshot.waveActive || snapshot.wavePlan.length > 0) {
+      return;
+    }
+    if (snapshot.level > snapshot.maxLevel) {
+      return;
+    }
+
+    snapshot.wavePlan = buildWavePlan(snapshot.level, this.state.difficulty);
+    snapshot.totalWaveEnemies = snapshot.wavePlan.length;
+    snapshot.spawnedThisWave = 0;
+    snapshot.currentWaveBossName = "";
+
+    for (const enemyType of snapshot.wavePlan) {
+      const stage = bossStageFromSpawnKey(enemyType);
+      if (stage) {
+        snapshot.currentWaveBossName = BOSS_PROFILES[stage].name;
+        break;
+      }
+    }
+
+    snapshot.waveActive = true;
+    snapshot.spawnInterval = Math.max(0.11, 0.48 - Math.min(snapshot.level, 90) * 0.0024);
+    snapshot.spawnTimer = 0.08;
+    const extra = snapshot.currentWaveBossName ? ` + Boss: ${snapshot.currentWaveBossName}` : "";
+    this.showMessage(
+      `Level ${snapshot.level} gestartet: ${snapshot.totalWaveEnemies} Gegner${extra}`,
+      2.2,
+    );
+  }
+
+  private spawnEnemy(enemyType: SpawnKey): void {
+    const snapshot = this.state.snapshot;
+    const diff = this.state.difficulty;
+    const levelFactor = snapshot.level;
+
+    const startPoint = PATH_POINTS[0];
+
+    const bossStage = bossStageFromSpawnKey(enemyType);
+    if (bossStage) {
+      const profile = BOSS_PROFILES[bossStage];
+      if (!profile) {
+        return;
+      }
+
+      const hp =
+        (540 + levelFactor * 130) *
+        diff.hpMult *
+        profile.hpMult *
+        rngRange(this.rng, 0.98, 1.04);
+
+      const speed =
+        (48 + levelFactor * 1.15) *
+        diff.speedMult *
+        profile.speedMult *
+        rngRange(this.rng, 0.98, 1.03);
+
+      const reward = Math.trunc((88 + levelFactor * 10) * diff.rewardMult * profile.rewardMult);
+
+      snapshot.enemies.push({
+        id: this.state.nextEnemyId++,
+        pos: { x: startPoint.x, y: startPoint.y },
+        pathIndex: 0,
+        hp,
+        maxHp: hp,
+        speed,
+        reward,
+        enemyType: "boss",
+        radius: profile.radius,
+        color: [...profile.color] as [number, number, number],
+        slowFactor: 1.0,
+        slowTimer: 0,
+        reachedEnd: false,
+        dead: false,
+        armor: profile.armor + levelFactor * 0.05,
+        slowResistance: profile.slowResist,
+        regenPerSec: profile.regen,
+        lifeDamage: profile.lifeDamage,
+        bossName: profile.name,
+        bossShape: profile.shape,
+      });
+      return;
+    }
+
+    if (enemyType !== "basic" && enemyType !== "runner" && enemyType !== "brute") {
+      return;
+    }
+
+    const archetype = ENEMY_ARCHETYPES[enemyType];
+
+    const hp =
+      (archetype.baseHp + levelFactor * archetype.hpGrowth) *
+      diff.hpMult *
+      rngRange(this.rng, 0.96, 1.08);
+
+    const speed =
+      (archetype.baseSpeed + levelFactor * archetype.speedGrowth) *
+      diff.speedMult *
+      rngRange(this.rng, 0.97, 1.04);
+
+    const reward = Math.trunc((archetype.rewardBase + levelFactor * archetype.rewardGrowth) * diff.rewardMult);
+
+    const armor =
+      archetype.armor + levelFactor * (enemyType === "brute" ? 0.03 : 0.0);
+
+    snapshot.enemies.push({
+      id: this.state.nextEnemyId++,
+      pos: { x: startPoint.x, y: startPoint.y },
+      pathIndex: 0,
+      hp,
+      maxHp: hp,
+      speed,
+      reward,
+      enemyType,
+      radius: archetype.radius,
+      color: [...archetype.color] as [number, number, number],
+      slowFactor: 1.0,
+      slowTimer: 0,
+      reachedEnd: false,
+      dead: false,
+      armor,
+      slowResistance: archetype.slowResist,
+      regenPerSec: 0,
+      lifeDamage: archetype.lifeDamage,
+      bossName: "",
+      bossShape: "circle",
+    });
+  }
+
+  private trySelectTower(towerName: keyof typeof TOWER_TYPES): void {
+    const snapshot = this.state.snapshot;
+    const towerStats = TOWER_TYPES[towerName];
+
+    if (snapshot.level < towerStats.unlock) {
+      this.showMessage(`${towerName} ab Level ${towerStats.unlock}`, 2.0);
+      return;
+    }
+    if (snapshot.money < towerStats.cost) {
+      this.showMessage("Nicht genug Geld", 1.6);
+      return;
+    }
+
+    snapshot.selectedTowerName = towerName;
+  }
+
+  private placeTower(x: number, y: number): void {
+    const snapshot = this.state.snapshot;
+    if (!snapshot.selectedTowerName) {
+      return;
+    }
+
+    const towerName = snapshot.selectedTowerName;
+    const cost = TOWER_TYPES[towerName].cost;
+
+    if (snapshot.money < cost) {
+      this.showMessage("Nicht genug Geld", 1.6);
+      return;
+    }
+
+    const position = { x, y };
+    if (!validTowerPosition(position, snapshot.towers)) {
+      this.showMessage("Turm kann dort nicht platziert werden", 1.6);
+      return;
+    }
+
+    snapshot.money -= cost;
+    snapshot.towers.push({
+      id: this.state.nextTowerId++,
+      pos: position,
+      towerType: towerName,
+      cooldownLeft: 0,
+    });
+    this.showMessage(`${towerName} platziert`, 1.2);
+  }
+}
+
+function createInitialSnapshot(
+  state: GameSnapshot["state"],
+  difficultyName: DifficultyName,
+  difficulty: DifficultyProfile,
+  maxLevelOverride?: number,
+): GameSnapshot {
+  const maxLevel = maxLevelOverride ?? difficulty.maxLevel;
+
+  return {
+    state,
+    difficultyName,
+    level: 1,
+    maxLevel,
+    money: difficulty.startMoney,
+    lives: difficulty.lives,
+    selectedTowerName: null,
+    waveActive: false,
+    wavePlan: [],
+    spawnTimer: 0,
+    spawnInterval: 0.52,
+    spawnedThisWave: 0,
+    totalWaveEnemies: 0,
+    currentWaveBossName: "",
+    message: "",
+    messageTimer: 0,
+    towers: [],
+    enemies: [],
+    bullets: [],
+    nextWavePreview: previewWaveInfo(1, difficulty),
+  };
+}
+
+function assertUnreachable(value: never): never {
+  throw new Error(`Unhandled action: ${JSON.stringify(value)}`);
+}

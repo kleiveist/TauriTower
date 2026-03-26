@@ -8,5 +8,6 @@
 ## 📄 Pages
 - 📝 [Implementation Order](implementation-order.md)
 - 📝 [Porting Workflow](porting-workflow.md)
+- 📝 [Prototype Architecture (Headless)](prototype-architecture.md)
 
 <!-- AUTO-GENERATED:docs-index END -->

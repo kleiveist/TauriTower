@@ -14,6 +14,7 @@ This directory is split by audience and decision type.
 
 - [Porting Workflow](dev/porting-workflow.md)
 - [Implementation Order](dev/implementation-order.md)
+- [Prototype Architecture (Headless)](dev/prototype-architecture.md)
 
 ## Tooling Docs
 

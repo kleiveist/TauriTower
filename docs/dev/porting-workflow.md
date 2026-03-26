@@ -39,3 +39,24 @@ This workflow defines how to convert prototype gameplay into the TauriTwoer targ
 - Favor data-driven definitions for towers, enemies, projectiles, bosses, and difficulty profiles.
 - Keep simulation state serializable and easy to inspect.
 - Use explicit interfaces between simulation, rendering, and input layers.
+
+## Prototype Architecture Reference
+
+The current headless prototype port is documented in detail at
+[`prototype-architecture.md`](prototype-architecture.md).
+
+When extending the port, keep this layering contract stable:
+
+- `data/` for balancing/content definitions
+- `math/` for geometry/vector helpers
+- `domain/` for pure gameplay rules
+- `engine/` for tick orchestration and action/state handling
+
+## Documenting Deviations
+
+If a behavior intentionally diverges from the Python reference, document it in
+`prototype-architecture.md` under "Abweichungen zur Python-Referenz" with:
+
+- the exact affected subsystem,
+- the reason for the change,
+- and how correctness will be validated.

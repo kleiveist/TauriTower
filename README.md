@@ -15,6 +15,7 @@
 - 🗂️ [Overview](docs/dev/dev.md)
 - 📝 [Implementation Order](docs/dev/implementation-order.md)
 - 📝 [Porting Workflow](docs/dev/porting-workflow.md)
+- 📝 [Prototype Architecture (Headless)](docs/dev/prototype-architecture.md)
 
 ## 📁 Tools
 - 🗂️ [Overview](docs/tools/tools.md)
@@ -100,6 +101,7 @@ python3 tools/control.py --build --copy
 - [ADR 0001: Tauri Target Architecture](docs/adr/0001-tauri-target-architecture.md)
 - [ADR 0002: Repo and Tooling Boundaries](docs/adr/0002-repo-tooling-boundaries.md)
 - [Developer Workflow](docs/dev/porting-workflow.md)
+- [Prototype Architecture (Headless)](docs/dev/prototype-architecture.md)
 - [Tooling Overview](docs/tools/README.md)
 - [Run & Play Guide](docs/usr/run-play-guide.md)
 

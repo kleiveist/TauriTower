@@ -1,0 +1,43 @@
+import type { EnemyArchetype } from "../types";
+
+export const ENEMY_ARCHETYPES: Record<"basic" | "runner" | "brute", EnemyArchetype> = {
+  basic: {
+    baseHp: 42,
+    hpGrowth: 11.0,
+    baseSpeed: 72,
+    speedGrowth: 2.0,
+    rewardBase: 10,
+    rewardGrowth: 0.7,
+    radius: 14,
+    color: [200, 86, 86],
+    armor: 0.0,
+    slowResist: 0.0,
+    lifeDamage: 1,
+  },
+  runner: {
+    baseHp: 30,
+    hpGrowth: 8.2,
+    baseSpeed: 108,
+    speedGrowth: 2.9,
+    rewardBase: 12,
+    rewardGrowth: 0.75,
+    radius: 11,
+    color: [240, 210, 80],
+    armor: 0.0,
+    slowResist: 0.12,
+    lifeDamage: 1,
+  },
+  brute: {
+    baseHp: 96,
+    hpGrowth: 22.0,
+    baseSpeed: 52,
+    speedGrowth: 1.4,
+    rewardBase: 20,
+    rewardGrowth: 1.2,
+    radius: 18,
+    color: [122, 130, 150],
+    armor: 4.0,
+    slowResist: 0.3,
+    lifeDamage: 2,
+  },
+};
