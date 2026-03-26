@@ -1,3 +1,6 @@
+<!-- AUTO-GENERATED:backlink START -->
+[← Back](tools.md)
+<!-- AUTO-GENERATED:backlink END -->
 # Tooling Overview
 
 TauriTwoer operational scripts are organized under `tools/` and orchestrated through `tools/control.py`.

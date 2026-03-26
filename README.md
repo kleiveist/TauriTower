@@ -1,3 +1,32 @@
+<!-- AUTO-GENERATED:docs-index START -->
+
+## 📄 Files
+- ⏭️ (keine Markdown-Dateien im Projekt-Root)
+
+# DOCS
+- 📚 [Docs Home](docs/index.md)
+
+## 📁 ADR
+- 🗂️ [Overview](docs/adr/adr.md)
+- 📝 [ADR 0001: Tauri Target Architecture](docs/adr/0001-tauri-target-architecture.md)
+- 📝 [ADR 0002: Repository and Tooling Boundaries](docs/adr/0002-repo-tooling-boundaries.md)
+
+## 📁 DEV
+- 🗂️ [Overview](docs/dev/dev.md)
+- 📝 [Implementation Order](docs/dev/implementation-order.md)
+- 📝 [Porting Workflow](docs/dev/porting-workflow.md)
+
+## 📁 Tools
+- 🗂️ [Overview](docs/tools/tools.md)
+- 📝 [Control CLI Command Matrix](docs/tools/control-cli.md)
+- 📝 [Environment Variables](docs/tools/environment-variables.md)
+- 📝 [Tool Selection Guide](docs/tools/tool-selection.md)
+
+## 📁 USR
+- 🗂️ [Overview](docs/usr/usr.md)
+- 📝 [Run and Play Guide](docs/usr/run-play-guide.md)
+
+<!-- AUTO-GENERATED:docs-index END -->
 # TauriTwoer
 
 TauriTwoer is a desktop porting and productization project.

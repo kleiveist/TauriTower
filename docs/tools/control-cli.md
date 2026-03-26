@@ -1,3 +1,6 @@
+<!-- AUTO-GENERATED:backlink START -->
+[← Back](tools.md)
+<!-- AUTO-GENERATED:backlink END -->
 # Control CLI Command Matrix
 
 Canonical entrypoint:

@@ -1,3 +1,6 @@
+<!-- AUTO-GENERATED:backlink START -->
+[← Back](tools.md)
+<!-- AUTO-GENERATED:backlink END -->
 # Environment Variables
 
 This reference covers variables used by scripts routed via `tools/control.py`.

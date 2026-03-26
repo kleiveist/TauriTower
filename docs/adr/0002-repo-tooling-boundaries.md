@@ -1,3 +1,6 @@
+<!-- AUTO-GENERATED:backlink START -->
+[← Back](adr.md)
+<!-- AUTO-GENERATED:backlink END -->
 # ADR 0002: Repository and Tooling Boundaries
 
 - Status: Accepted

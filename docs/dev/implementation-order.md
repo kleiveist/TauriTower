@@ -1,3 +1,6 @@
+<!-- AUTO-GENERATED:backlink START -->
+[← Back](dev.md)
+<!-- AUTO-GENERATED:backlink END -->
 # Implementation Order
 
 Use this order for predictable delivery and risk reduction.

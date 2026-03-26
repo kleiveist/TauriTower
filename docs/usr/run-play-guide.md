@@ -1,3 +1,6 @@
+<!-- AUTO-GENERATED:backlink START -->
+[← Back](usr.md)
+<!-- AUTO-GENERATED:backlink END -->
 # Run and Play Guide
 
 This guide is for running TauriTwoer as a user or tester.

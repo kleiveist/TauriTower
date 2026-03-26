@@ -1,3 +1,6 @@
+<!-- AUTO-GENERATED:backlink START -->
+[← Back](index.md)
+<!-- AUTO-GENERATED:backlink END -->
 # Documentation Index
 
 This directory is split by audience and decision type.

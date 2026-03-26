@@ -1,3 +1,6 @@
+<!-- AUTO-GENERATED:backlink START -->
+[← Back](tools.md)
+<!-- AUTO-GENERATED:backlink END -->
 # Tool Selection Guide
 
 Use this decision table to choose the right `tools/control.py` command quickly.
