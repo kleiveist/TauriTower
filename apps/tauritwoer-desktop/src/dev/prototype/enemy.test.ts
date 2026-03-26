@@ -21,6 +21,7 @@ function makeEnemy(overrides: Partial<EnemySnapshot> = {}): EnemySnapshot {
     dead: false,
     armor: 0,
     slowResistance: 0,
+    splashResistance: 0,
     regenPerSec: 0,
     lifeDamage: 1,
     bossName: "",
@@ -35,7 +36,7 @@ describe("enemy behavior", () => {
     updateEnemy(enemy, 1, PATH_POINTS);
 
     expect(enemy.pos.x).toBeCloseTo(72, 6);
-    expect(enemy.pos.y).toBe(140);
+    expect(enemy.pos.y).toBe(PATH_POINTS[0].y);
     expect(enemy.pathIndex).toBe(0);
   });
 

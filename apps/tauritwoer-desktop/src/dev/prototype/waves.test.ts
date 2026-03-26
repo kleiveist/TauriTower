@@ -31,6 +31,6 @@ describe("wave planner", () => {
     const preview = previewWaveInfo(20, DIFFICULTIES.schwer);
     expect(preview.boss).toBe(true);
     expect(preview.bossName.length).toBeGreaterThan(1);
-    expect(preview.count).toBe(preview.basic + preview.runner + preview.brute + 1);
+    expect(preview.count).toBe(preview.basic + preview.runner + preview.brute + preview.shield + 1);
   });
 });

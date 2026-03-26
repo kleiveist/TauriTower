@@ -1,5 +1,7 @@
 import type { Rng } from "./types";
 
+const DEFAULT_SEED = 0xdecafbad;
+
 export function createMathRandomRng(): Rng {
   return {
     nextFloat: () => Math.random(),
@@ -26,7 +28,8 @@ export function pickRng(rng?: Rng, seed?: number): Rng {
   if (Number.isFinite(seed)) {
     return createSeededRng(seed as number);
   }
-  return createMathRandomRng();
+  // Deterministic default to keep wave behavior reproducible.
+  return createSeededRng(DEFAULT_SEED);
 }
 
 export function rngRange(rng: Rng, min: number, max: number): number {

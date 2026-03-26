@@ -18,6 +18,7 @@ import type {
   GameSnapshot,
   ResetOptions,
   SpawnKey,
+  TowerName,
 } from "../types";
 
 interface MutableSessionState {
@@ -38,6 +39,8 @@ class GameSessionImpl implements GameSession {
   private readonly defaultMaxLevelOverride: number | undefined;
 
   private readonly state: MutableSessionState;
+
+  private autoWaveCountdown = -1;
 
   constructor(options: GameSessionOptions) {
     this.rng = pickRng(options.rng, options.seed);
@@ -87,13 +90,15 @@ class GameSessionImpl implements GameSession {
       spawnedThisWave: 0,
       totalWaveEnemies: 0,
       currentWaveBossName: "",
-      message: "Leertaste startet die erste Welle",
+      message: "Space starts the first wave",
       messageTimer: 4.0,
       nextWavePreview: previewWaveInfo(1, difficulty),
     };
+
     this.state.nextEnemyId = 1;
     this.state.nextTowerId = 1;
     this.state.nextBulletId = 1;
+    this.autoWaveCountdown = -1;
   }
 
   applyAction(action: GameAction): void {
@@ -104,6 +109,7 @@ class GameSessionImpl implements GameSession {
       }
       case "startWave": {
         if (this.state.snapshot.state === "playing") {
+          this.autoWaveCountdown = -1;
           this.startWave();
         }
         break;
@@ -134,6 +140,7 @@ class GameSessionImpl implements GameSession {
         this.state.snapshot.state = "menu";
         this.state.snapshot.selectedTowerName = null;
         this.showMessage("", 0);
+        this.autoWaveCountdown = -1;
         break;
       }
       default: {
@@ -158,6 +165,14 @@ class GameSessionImpl implements GameSession {
     }
 
     this.updateMessageTimer(dtSeconds);
+
+    if (!snapshot.waveActive && this.autoWaveCountdown >= 0) {
+      this.autoWaveCountdown -= dtSeconds;
+      if (this.autoWaveCountdown <= 0) {
+        this.autoWaveCountdown = -1;
+        this.startWave();
+      }
+    }
 
     if (snapshot.waveActive && snapshot.wavePlan.length > 0) {
       snapshot.spawnTimer -= dtSeconds;
@@ -208,18 +223,22 @@ class GameSessionImpl implements GameSession {
     if (snapshot.waveActive && snapshot.wavePlan.length === 0 && snapshot.enemies.length === 0) {
       snapshot.waveActive = false;
       snapshot.level += 1;
+
       if (snapshot.level > snapshot.maxLevel) {
         snapshot.state = "victory";
-        this.showMessage("Sieg! Alle Level abgeschlossen.", 5);
+        this.showMessage("Victory! All levels completed.", 5);
+        this.autoWaveCountdown = -1;
       } else {
         snapshot.money += 28 + snapshot.level * 2;
-        this.showMessage(`Level geschafft. Naechstes Level: ${snapshot.level}`, 3);
+        this.showMessage(`Wave cleared. Next level: ${snapshot.level}`, 2.2);
+        this.autoWaveCountdown = 1.4;
       }
     }
 
     if (snapshot.lives <= 0) {
       snapshot.state = "game_over";
       this.showMessage("Game Over", 5);
+      this.autoWaveCountdown = -1;
     }
 
     this.refreshWavePreview();
@@ -311,12 +330,12 @@ class GameSessionImpl implements GameSession {
     }
 
     snapshot.waveActive = true;
-    snapshot.spawnInterval = Math.max(0.11, 0.48 - Math.min(snapshot.level, 90) * 0.0024);
+    snapshot.spawnInterval = Math.max(0.1, 0.46 - Math.min(snapshot.level, 90) * 0.0025);
     snapshot.spawnTimer = 0.08;
     const extra = snapshot.currentWaveBossName ? ` + Boss: ${snapshot.currentWaveBossName}` : "";
     this.showMessage(
-      `Level ${snapshot.level} gestartet: ${snapshot.totalWaveEnemies} Gegner${extra}`,
-      2.2,
+      `Level ${snapshot.level} started: ${snapshot.totalWaveEnemies} enemies${extra}`,
+      2.0,
     );
   }
 
@@ -365,6 +384,7 @@ class GameSessionImpl implements GameSession {
         dead: false,
         armor: profile.armor + levelFactor * 0.05,
         slowResistance: profile.slowResist,
+        splashResistance: Math.min(0.58, 0.16 + bossStage * 0.035),
         regenPerSec: profile.regen,
         lifeDamage: profile.lifeDamage,
         bossName: profile.name,
@@ -373,7 +393,7 @@ class GameSessionImpl implements GameSession {
       return;
     }
 
-    if (enemyType !== "basic" && enemyType !== "runner" && enemyType !== "brute") {
+    if (enemyType !== "basic" && enemyType !== "runner" && enemyType !== "brute" && enemyType !== "shield") {
       return;
     }
 
@@ -392,7 +412,7 @@ class GameSessionImpl implements GameSession {
     const reward = Math.trunc((archetype.rewardBase + levelFactor * archetype.rewardGrowth) * diff.rewardMult);
 
     const armor =
-      archetype.armor + levelFactor * (enemyType === "brute" ? 0.03 : 0.0);
+      archetype.armor + levelFactor * (enemyType === "brute" || enemyType === "shield" ? 0.03 : 0.0);
 
     snapshot.enemies.push({
       id: this.state.nextEnemyId++,
@@ -411,23 +431,24 @@ class GameSessionImpl implements GameSession {
       dead: false,
       armor,
       slowResistance: archetype.slowResist,
-      regenPerSec: 0,
+      splashResistance: archetype.splashResist ?? 0,
+      regenPerSec: enemyType === "shield" ? 0.18 + levelFactor * 0.02 : 0,
       lifeDamage: archetype.lifeDamage,
       bossName: "",
       bossShape: "circle",
     });
   }
 
-  private trySelectTower(towerName: keyof typeof TOWER_TYPES): void {
+  private trySelectTower(towerName: TowerName): void {
     const snapshot = this.state.snapshot;
     const towerStats = TOWER_TYPES[towerName];
 
     if (snapshot.level < towerStats.unlock) {
-      this.showMessage(`${towerName} ab Level ${towerStats.unlock}`, 2.0);
+      this.showMessage(`${towerName} unlocks at level ${towerStats.unlock}`, 1.9);
       return;
     }
     if (snapshot.money < towerStats.cost) {
-      this.showMessage("Nicht genug Geld", 1.6);
+      this.showMessage("Not enough money", 1.6);
       return;
     }
 
@@ -444,13 +465,13 @@ class GameSessionImpl implements GameSession {
     const cost = TOWER_TYPES[towerName].cost;
 
     if (snapshot.money < cost) {
-      this.showMessage("Nicht genug Geld", 1.6);
+      this.showMessage("Not enough money", 1.6);
       return;
     }
 
     const position = { x, y };
     if (!validTowerPosition(position, snapshot.towers)) {
-      this.showMessage("Turm kann dort nicht platziert werden", 1.6);
+      this.showMessage("Tower cannot be placed there", 1.6);
       return;
     }
 
@@ -461,7 +482,7 @@ class GameSessionImpl implements GameSession {
       towerType: towerName,
       cooldownLeft: 0,
     });
-    this.showMessage(`${towerName} platziert`, 1.2);
+    this.showMessage(`${towerName} placed`, 1.2);
   }
 }
 

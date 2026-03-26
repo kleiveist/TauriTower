@@ -9,7 +9,7 @@ export type TowerName =
   | "Bombarman"
   | "Panzer-Tower";
 
-export type EnemyType = "basic" | "runner" | "brute" | "boss";
+export type EnemyType = "basic" | "runner" | "brute" | "shield" | "boss";
 
 export type BulletType = "single" | "stun" | "splash" | "cannon";
 
@@ -25,7 +25,7 @@ export type BossShape =
   | "orb"
   | "skull";
 
-export type SpawnKey = "basic" | "runner" | "brute" | `boss_${number}`;
+export type SpawnKey = "basic" | "runner" | "brute" | "shield" | `boss_${number}`;
 
 export type ColorRgb = [number, number, number];
 
@@ -69,6 +69,7 @@ export interface EnemyArchetype {
   color: ColorRgb;
   armor: number;
   slowResist: number;
+  splashResist?: number;
   lifeDamage: number;
 }
 
@@ -103,6 +104,7 @@ export interface EnemySnapshot {
   dead: boolean;
   armor: number;
   slowResistance: number;
+  splashResistance: number;
   regenPerSec: number;
   lifeDamage: number;
   bossName: string;
@@ -138,6 +140,7 @@ export interface WavePreview {
   basic: number;
   runner: number;
   brute: number;
+  shield: number;
 }
 
 export interface GameSnapshot {

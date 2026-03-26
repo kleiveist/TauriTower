@@ -21,6 +21,7 @@ function makeEnemy(id: number, overrides: Partial<EnemySnapshot> = {}): EnemySna
     dead: false,
     armor: 0,
     slowResistance: 0,
+    splashResistance: 0,
     regenPerSec: 0,
     lifeDamage: 1,
     bossName: "",

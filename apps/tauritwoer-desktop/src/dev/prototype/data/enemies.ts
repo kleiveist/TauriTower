@@ -1,6 +1,6 @@
 import type { EnemyArchetype } from "../types";
 
-export const ENEMY_ARCHETYPES: Record<"basic" | "runner" | "brute", EnemyArchetype> = {
+export const ENEMY_ARCHETYPES: Record<"basic" | "runner" | "brute" | "shield", EnemyArchetype> = {
   basic: {
     baseHp: 42,
     hpGrowth: 11.0,
@@ -12,6 +12,7 @@ export const ENEMY_ARCHETYPES: Record<"basic" | "runner" | "brute", EnemyArchety
     color: [200, 86, 86],
     armor: 0.0,
     slowResist: 0.0,
+    splashResist: 0.0,
     lifeDamage: 1,
   },
   runner: {
@@ -25,6 +26,7 @@ export const ENEMY_ARCHETYPES: Record<"basic" | "runner" | "brute", EnemyArchety
     color: [240, 210, 80],
     armor: 0.0,
     slowResist: 0.12,
+    splashResist: 0.0,
     lifeDamage: 1,
   },
   brute: {
@@ -38,6 +40,21 @@ export const ENEMY_ARCHETYPES: Record<"basic" | "runner" | "brute", EnemyArchety
     color: [122, 130, 150],
     armor: 4.0,
     slowResist: 0.3,
+    splashResist: 0.2,
+    lifeDamage: 2,
+  },
+  shield: {
+    baseHp: 128,
+    hpGrowth: 24.0,
+    baseSpeed: 46,
+    speedGrowth: 1.1,
+    rewardBase: 24,
+    rewardGrowth: 1.55,
+    radius: 17,
+    color: [92, 178, 194],
+    armor: 9.0,
+    slowResist: 0.52,
+    splashResist: 0.45,
     lifeDamage: 2,
   },
 };

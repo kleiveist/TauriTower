@@ -1,103 +1,31 @@
 :root {
-  color: #14171b;
-  background: #f2f4f8;
-  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  font-size: 16px;
-  line-height: 1.4;
+  font-family: "Trebuchet MS", "Verdana", sans-serif;
+  color: #e7f0ff;
+  background-color: #050911;
 }
 
-body {
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
-.prototype-shell {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 24px;
+.prototype-app-shell {
+  width: 100vw;
+  height: 100vh;
+  background:
+    radial-gradient(circle at 15% 22%, rgba(41, 78, 126, 0.5), transparent 45%),
+    radial-gradient(circle at 84% 78%, rgba(42, 84, 58, 0.42), transparent 40%),
+    linear-gradient(120deg, #070d16, #111d2d 52%, #17253a);
 }
 
-.prototype-shell h1 {
-  margin: 0 0 8px;
-  font-size: 1.9rem;
-}
-
-.prototype-shell > p {
-  margin: 0 0 20px;
-  color: #37404b;
-}
-
-.panel {
-  background: #ffffff;
-  border: 1px solid #d7dde5;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 14px;
-}
-
-.panel h2 {
-  margin: 0 0 10px;
-  font-size: 1.1rem;
-}
-
-.button-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-button {
-  border: 1px solid #9aa7b7;
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #17202a;
-  font-size: 0.9rem;
-  font-weight: 600;
-  padding: 8px 10px;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #edf2f8;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px 12px;
-  margin: 0;
-}
-
-.stats-grid div {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: #fbfdff;
-}
-
-.stats-grid dt {
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  color: #516072;
-  margin-bottom: 4px;
-}
-
-.stats-grid dd {
-  margin: 0;
-  font-weight: 600;
-}
-
-.message {
-  margin: 12px 0 0;
-  font-weight: 600;
-}
-
-@media (max-width: 768px) {
-  .prototype-shell {
-    padding: 16px;
-  }
-
-  .stats-grid {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  }
+.prototype-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  user-select: none;
 }

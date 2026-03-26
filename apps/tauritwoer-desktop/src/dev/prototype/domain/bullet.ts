@@ -79,6 +79,8 @@ function hitBullet(
         damage *= 0.7;
       }
 
+      damage *= 1 - enemy.splashResistance;
+
       if (enemyTakeDamage(enemy, damage)) {
         killed.push(enemy);
       }

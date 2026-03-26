@@ -2,6 +2,7 @@ import { BOSS_PROFILES } from "../data/bosses";
 import type { DifficultyProfile, SpawnKey, WavePreview } from "../types";
 
 export function enemyCountForLevel(level: number, difficulty: DifficultyProfile): number {
+  // Required wave-size formula: ceil(level * difficultyMultiplier)
   return Math.max(1, Math.ceil(level * difficulty.countMult));
 }
 
@@ -17,6 +18,7 @@ export function buildWavePlan(level: number, difficulty: DifficultyProfile): Spa
   const regularCount = enemyCountForLevel(level, difficulty);
   let runnerCount = 0;
   let bruteCount = 0;
+  let shieldCount = 0;
 
   if (level >= 6) {
     const runnerRatio = Math.min(0.18 + level * 0.008, 0.36);
@@ -26,36 +28,56 @@ export function buildWavePlan(level: number, difficulty: DifficultyProfile): Spa
     const bruteRatio = Math.min(0.1 + (level - 12) * 0.005, 0.24);
     bruteCount = Math.max(1, Math.round(regularCount * bruteRatio));
   }
+  if (level >= 18) {
+    const shieldRatio = Math.min(0.06 + (level - 18) * 0.004, 0.18);
+    shieldCount = Math.max(1, Math.round(regularCount * shieldRatio));
+  }
 
-  if (runnerCount + bruteCount >= regularCount) {
-    let overflow = runnerCount + bruteCount - (regularCount - 1);
-    if (bruteCount >= overflow) {
-      bruteCount -= overflow;
-    } else {
-      overflow -= bruteCount;
-      bruteCount = 0;
-      runnerCount = Math.max(0, runnerCount - overflow);
+  const maxSpecial = regularCount - 1;
+  let specials = runnerCount + bruteCount + shieldCount;
+  if (specials > maxSpecial) {
+    let overflow = specials - maxSpecial;
+
+    const reduce = (current: number): number => {
+      const step = Math.min(current, overflow);
+      overflow -= step;
+      return current - step;
+    };
+
+    bruteCount = reduce(bruteCount);
+    if (overflow > 0) {
+      shieldCount = reduce(shieldCount);
+    }
+    if (overflow > 0) {
+      runnerCount = reduce(runnerCount);
+    }
+
+    specials = runnerCount + bruteCount + shieldCount;
+    if (specials > maxSpecial) {
+      runnerCount = Math.max(0, runnerCount - (specials - maxSpecial));
     }
   }
 
-  const basicCount = Math.max(1, regularCount - runnerCount - bruteCount);
-  const counts: Record<"basic" | "runner" | "brute", number> = {
+  const basicCount = Math.max(1, regularCount - runnerCount - bruteCount - shieldCount);
+  const counts: Record<"basic" | "runner" | "brute" | "shield", number> = {
     basic: basicCount,
     runner: runnerCount,
     brute: bruteCount,
+    shield: shieldCount,
   };
 
-  const order: Array<"basic" | "runner" | "brute"> = [
+  const order: Array<"basic" | "runner" | "brute" | "shield"> = [
     "basic",
     "runner",
     "basic",
     "brute",
     "basic",
+    "shield",
     "runner",
   ];
 
   const plan: SpawnKey[] = [];
-  while (counts.basic + counts.runner + counts.brute > 0) {
+  while (counts.basic + counts.runner + counts.brute + counts.shield > 0) {
     for (const enemyType of order) {
       if (counts[enemyType] > 0) {
         plan.push(enemyType);
@@ -90,6 +112,7 @@ export function previewWaveInfo(level: number, difficulty: DifficultyProfile): W
     basic: plan.filter((enemyType) => enemyType === "basic").length,
     runner: plan.filter((enemyType) => enemyType === "runner").length,
     brute: plan.filter((enemyType) => enemyType === "brute").length,
+    shield: plan.filter((enemyType) => enemyType === "shield").length,
   };
 }
 

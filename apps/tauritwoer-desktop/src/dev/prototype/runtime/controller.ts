@@ -1,0 +1,411 @@
+import { FIELD_W, FPS } from "../data/constants";
+import { DIFFICULTY_ORDER } from "../data/difficulties";
+import { createGameSession } from "../index";
+import type { DifficultyName, GameAction, GameSnapshot, Point } from "../types";
+import { findTaggedRectWithValue, towerFromDigitKey } from "./input";
+import { createViewport, pointInRect, toWorldPosition } from "./layout";
+import { renderPrototypeFrame } from "./renderer";
+import type { PrototypeScreen, RenderHitAreas } from "./renderer";
+
+const FIXED_STEP = 1 / FPS;
+const MAX_FRAME_DELTA = 0.12;
+const MAX_STEPS_PER_FRAME = 8;
+
+export interface PrototypeControllerOptions {
+  canvas: HTMLCanvasElement;
+  seed?: number;
+}
+
+export interface PrototypeController {
+  start(): void;
+  stop(): void;
+  resize(pixelWidth: number, pixelHeight: number): void;
+}
+
+export function createPrototypeController(options: PrototypeControllerOptions): PrototypeController {
+  return new PrototypeControllerImpl(options);
+}
+
+class PrototypeControllerImpl implements PrototypeController {
+  private readonly canvas: HTMLCanvasElement;
+
+  private readonly ctx: CanvasRenderingContext2D;
+
+  private readonly session: ReturnType<typeof createGameSession>;
+
+  private snapshot: GameSnapshot;
+
+  private uiScreen: "start" | "difficulty" | "playing" = "start";
+
+  private viewport = createViewport(1, 1);
+
+  private hitAreas: RenderHitAreas = {
+    difficultyButtons: [],
+    towerCards: [],
+  };
+
+  private pointerWorld: Point = { x: -1000, y: -1000 };
+
+  private animationFrame = 0;
+
+  private running = false;
+
+  private lastFrameMs = 0;
+
+  private accumulator = 0;
+
+  constructor(options: PrototypeControllerOptions) {
+    this.canvas = options.canvas;
+    this.session = createGameSession({ seed: options.seed ?? 20260327 });
+    this.snapshot = this.session.getSnapshot();
+
+    const context = this.canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Failed to get 2D canvas context");
+    }
+    this.ctx = context;
+  }
+
+  start(): void {
+    if (this.running) {
+      return;
+    }
+
+    this.running = true;
+    this.lastFrameMs = performance.now();
+
+    this.canvas.addEventListener("pointermove", this.onPointerMove);
+    this.canvas.addEventListener("pointerdown", this.onPointerDown);
+    this.canvas.addEventListener("contextmenu", this.onContextMenu);
+    window.addEventListener("keydown", this.onKeyDown);
+
+    this.render();
+    this.animationFrame = window.requestAnimationFrame(this.onAnimationFrame);
+  }
+
+  stop(): void {
+    if (!this.running) {
+      return;
+    }
+
+    this.running = false;
+    window.cancelAnimationFrame(this.animationFrame);
+
+    this.canvas.removeEventListener("pointermove", this.onPointerMove);
+    this.canvas.removeEventListener("pointerdown", this.onPointerDown);
+    this.canvas.removeEventListener("contextmenu", this.onContextMenu);
+    window.removeEventListener("keydown", this.onKeyDown);
+  }
+
+  resize(pixelWidth: number, pixelHeight: number): void {
+    if (pixelWidth <= 0 || pixelHeight <= 0) {
+      return;
+    }
+
+    if (this.canvas.width !== pixelWidth || this.canvas.height !== pixelHeight) {
+      this.canvas.width = pixelWidth;
+      this.canvas.height = pixelHeight;
+    }
+
+    this.viewport = createViewport(pixelWidth, pixelHeight);
+    this.render();
+  }
+
+  private simulateStep(dtSeconds: number): void {
+    if (this.uiScreen === "start" || this.uiScreen === "difficulty") {
+      return;
+    }
+
+    this.session.tick(dtSeconds);
+    this.snapshot = this.session.getSnapshot();
+  }
+
+  private render(): void {
+    this.hitAreas = renderPrototypeFrame(
+      this.ctx,
+      this.viewport,
+      this.getRenderScreen(),
+      this.snapshot,
+    );
+
+    this.updateCursor(this.pointerWorld);
+  }
+
+  private applyAction(action: GameAction): void {
+    this.session.applyAction(action);
+    this.snapshot = this.session.getSnapshot();
+  }
+
+  private chooseDifficulty(difficulty: DifficultyName): void {
+    this.applyAction({ type: "chooseDifficulty", difficulty });
+    this.uiScreen = "playing";
+  }
+
+  private getRenderScreen(): PrototypeScreen {
+    if (this.uiScreen === "start") {
+      return "start";
+    }
+    if (this.uiScreen === "difficulty") {
+      return "difficulty";
+    }
+
+    if (this.snapshot.state === "game_over") {
+      return "game_over";
+    }
+    if (this.snapshot.state === "victory") {
+      return "victory";
+    }
+    return "playing";
+  }
+
+  private worldFromPointer(event: PointerEvent): Point {
+    const rect = this.canvas.getBoundingClientRect();
+    return toWorldPosition(
+      {
+        x: (event.clientX - rect.left) * (this.canvas.width / Math.max(1, rect.width)),
+        y: (event.clientY - rect.top) * (this.canvas.height / Math.max(1, rect.height)),
+      },
+      this.viewport,
+    );
+  }
+
+  private updateCursor(worldPoint: Point): void {
+    const screen = this.getRenderScreen();
+
+    if (screen === "start") {
+      this.canvas.style.cursor =
+        this.hitAreas.startButton && pointInRect(worldPoint, this.hitAreas.startButton)
+          ? "pointer"
+          : "default";
+      return;
+    }
+
+    if (screen === "difficulty") {
+      this.canvas.style.cursor = this.hitAreas.difficultyButtons.some(({ rect }) => pointInRect(worldPoint, rect))
+        ? "pointer"
+        : "default";
+      return;
+    }
+
+    if (screen === "game_over" || screen === "victory") {
+      const overButton =
+        (this.hitAreas.restartButton && pointInRect(worldPoint, this.hitAreas.restartButton)) ||
+        (this.hitAreas.menuButton && pointInRect(worldPoint, this.hitAreas.menuButton));
+      this.canvas.style.cursor = overButton ? "pointer" : "default";
+      return;
+    }
+
+    if (this.hitAreas.startWaveButton && pointInRect(worldPoint, this.hitAreas.startWaveButton)) {
+      this.canvas.style.cursor = "pointer";
+      return;
+    }
+
+    if (this.hitAreas.towerCards.some(({ rect }) => pointInRect(worldPoint, rect))) {
+      this.canvas.style.cursor = "pointer";
+      return;
+    }
+
+    if (worldPoint.x >= 0 && worldPoint.x <= FIELD_W) {
+      this.canvas.style.cursor = "crosshair";
+      return;
+    }
+
+    this.canvas.style.cursor = "default";
+  }
+
+  private onAnimationFrame = (nowMs: number): void => {
+    if (!this.running) {
+      return;
+    }
+
+    const delta = Math.min(MAX_FRAME_DELTA, Math.max(0, (nowMs - this.lastFrameMs) / 1000));
+    this.lastFrameMs = nowMs;
+    this.accumulator += delta;
+
+    let steps = 0;
+    while (this.accumulator >= FIXED_STEP && steps < MAX_STEPS_PER_FRAME) {
+      this.simulateStep(FIXED_STEP);
+      this.accumulator -= FIXED_STEP;
+      steps += 1;
+    }
+
+    if (steps > 0) {
+      this.render();
+    }
+
+    this.animationFrame = window.requestAnimationFrame(this.onAnimationFrame);
+  };
+
+  private onPointerMove = (event: PointerEvent): void => {
+    this.pointerWorld = this.worldFromPointer(event);
+    this.updateCursor(this.pointerWorld);
+  };
+
+  private onPointerDown = (event: PointerEvent): void => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const world = this.worldFromPointer(event);
+    this.pointerWorld = world;
+
+    const screen = this.getRenderScreen();
+
+    if (screen === "start") {
+      if (this.hitAreas.startButton && pointInRect(world, this.hitAreas.startButton)) {
+        this.uiScreen = "difficulty";
+        this.render();
+      }
+      return;
+    }
+
+    if (screen === "difficulty") {
+      const hit = findTaggedRectWithValue(
+        world,
+        this.hitAreas.difficultyButtons.map((entry) => ({
+          rect: entry.rect,
+          tag: "difficulty",
+          value: entry.difficulty,
+        })),
+      );
+
+      if (hit) {
+        this.chooseDifficulty(hit.value);
+        this.render();
+      }
+      return;
+    }
+
+    if (screen === "game_over" || screen === "victory") {
+      if (this.hitAreas.restartButton && pointInRect(world, this.hitAreas.restartButton)) {
+        this.applyAction({ type: "restart" });
+        this.uiScreen = "playing";
+      } else if (this.hitAreas.menuButton && pointInRect(world, this.hitAreas.menuButton)) {
+        this.applyAction({ type: "returnToMenu" });
+        this.uiScreen = "start";
+      }
+
+      this.render();
+      return;
+    }
+
+    if (this.hitAreas.startWaveButton && pointInRect(world, this.hitAreas.startWaveButton)) {
+      this.applyAction({ type: "startWave" });
+      this.render();
+      return;
+    }
+
+    const towerHit = findTaggedRectWithValue(
+      world,
+      this.hitAreas.towerCards.map((entry) => ({
+        rect: entry.rect,
+        tag: "tower",
+        value: entry.tower,
+      })),
+    );
+
+    if (towerHit) {
+      this.applyAction({ type: "selectTower", tower: towerHit.value });
+      this.render();
+      return;
+    }
+
+    if (world.x >= 0 && world.x <= FIELD_W) {
+      this.applyAction({ type: "placeTower", position: world });
+      this.render();
+    }
+  };
+
+  private onContextMenu = (event: MouseEvent): void => {
+    event.preventDefault();
+
+    if (this.getRenderScreen() !== "playing" || this.snapshot.state !== "playing") {
+      return;
+    }
+
+    this.applyAction({ type: "clearSelection" });
+    this.render();
+  };
+
+  private onKeyDown = (event: KeyboardEvent): void => {
+    const screen = this.getRenderScreen();
+
+    if (screen === "start") {
+      if (event.code === "Enter" || event.code === "Space") {
+        event.preventDefault();
+        this.uiScreen = "difficulty";
+        this.render();
+      }
+      return;
+    }
+
+    if (screen === "difficulty") {
+      if (event.code === "Escape") {
+        this.uiScreen = "start";
+        this.render();
+        return;
+      }
+
+      const digit = Number.parseInt(event.key, 10);
+      if (Number.isFinite(digit) && digit >= 1 && digit <= DIFFICULTY_ORDER.length) {
+        const difficulty = DIFFICULTY_ORDER[digit - 1];
+        if (difficulty) {
+          this.chooseDifficulty(difficulty);
+          this.render();
+        }
+      }
+      return;
+    }
+
+    if (screen === "game_over" || screen === "victory") {
+      if (event.code === "Enter" || event.code === "KeyR") {
+        event.preventDefault();
+        this.applyAction({ type: "restart" });
+        this.uiScreen = "playing";
+        this.render();
+        return;
+      }
+
+      if (event.code === "Escape" || event.code === "KeyM") {
+        event.preventDefault();
+        this.applyAction({ type: "returnToMenu" });
+        this.uiScreen = "start";
+        this.render();
+      }
+      return;
+    }
+
+    if (event.code === "Space") {
+      event.preventDefault();
+      this.applyAction({ type: "startWave" });
+      this.render();
+      return;
+    }
+
+    if (event.code === "KeyR") {
+      this.applyAction({ type: "restart" });
+      this.render();
+      return;
+    }
+
+    if (event.code === "KeyM") {
+      this.applyAction({ type: "returnToMenu" });
+      this.uiScreen = "start";
+      this.render();
+      return;
+    }
+
+    if (event.code === "Escape" || event.code === "Backspace" || event.code === "Delete") {
+      event.preventDefault();
+      this.applyAction({ type: "clearSelection" });
+      this.render();
+      return;
+    }
+
+    const tower = towerFromDigitKey(event.key);
+    if (tower) {
+      this.applyAction({ type: "selectTower", tower });
+      this.render();
+    }
+  };
+}
