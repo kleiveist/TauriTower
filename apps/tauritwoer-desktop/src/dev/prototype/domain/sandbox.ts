@@ -1,7 +1,7 @@
-import { BOSS_PROFILES } from "../data/bosses";
 import type {
   SandboxConfig,
   SandboxSlot,
+  SandboxValidationIssue,
   SandboxSlotValidationResult,
   SpawnKey,
   WavePreview,
@@ -82,47 +82,47 @@ export function normalizeSandboxSlot(slot: SandboxSlot): SandboxSlot {
 }
 
 export function validateSandboxSlot(slot: SandboxSlot): SandboxSlotValidationResult {
-  const errors: string[] = [];
+  const issues: SandboxValidationIssue[] = [];
 
   if (!slot.id.trim()) {
-    errors.push("Slot id is required");
+    issues.push({ code: "slot_id_required" });
   }
 
   if (!Number.isFinite(slot.startRound) || slot.startRound < MIN_START_ROUND) {
-    errors.push("Start round must be >= 1");
+    issues.push({ code: "start_round_min", min: MIN_START_ROUND });
   }
 
   if (!Number.isFinite(slot.baseCount) || slot.baseCount < 0) {
-    errors.push("Base count cannot be negative");
+    issues.push({ code: "base_count_non_negative" });
   }
 
   if (!Number.isFinite(slot.addEvery10Rounds) || slot.addEvery10Rounds < 0) {
-    errors.push("Add every 10 rounds cannot be negative");
+    issues.push({ code: "add_every_10_non_negative" });
   }
 
   if (!Number.isFinite(slot.multiplier) || slot.multiplier < MIN_MULTIPLIER || slot.multiplier > MAX_MULTIPLIER) {
-    errors.push(`Multiplier must be between ${MIN_MULTIPLIER} and ${MAX_MULTIPLIER}`);
+    issues.push({ code: "multiplier_range", min: MIN_MULTIPLIER, max: MAX_MULTIPLIER });
   }
 
   if (slot.enemyType === "boss") {
     if (!Number.isFinite(slot.bossStage) || slot.bossStage < 1 || slot.bossStage > MAX_BOSS_STAGE) {
-      errors.push("Boss stage must be between 1 and 9");
+      issues.push({ code: "boss_stage_range", min: 1, max: MAX_BOSS_STAGE });
     }
   }
 
   return {
-    valid: errors.length === 0,
-    errors,
+    valid: issues.length === 0,
+    issues,
   };
 }
 
 export function validateSandboxConfig(config: SandboxConfig): SandboxSlotValidationResult {
-  const errors: string[] = [];
+  const issues: SandboxValidationIssue[] = [];
 
   if (!Array.isArray(config.slots)) {
     return {
       valid: false,
-      errors: ["Slots must be an array"],
+      issues: [{ code: "slots_must_be_array" }],
     };
   }
 
@@ -130,20 +130,20 @@ export function validateSandboxConfig(config: SandboxConfig): SandboxSlotValidat
   config.slots.forEach((slot, index) => {
     const result = validateSandboxSlot(slot);
     if (!result.valid) {
-      for (const message of result.errors) {
-        errors.push(`Slot ${index + 1}: ${message}`);
+      for (const issue of result.issues) {
+        issues.push({ ...issue, slotIndex: index + 1 });
       }
     }
 
     if (ids.has(slot.id)) {
-      errors.push(`Slot ${index + 1}: duplicate id`);
+      issues.push({ code: "duplicate_id", slotIndex: index + 1, id: slot.id });
     }
     ids.add(slot.id);
   });
 
   return {
-    valid: errors.length === 0,
-    errors,
+    valid: issues.length === 0,
+    issues,
   };
 }
 
@@ -200,20 +200,20 @@ export function buildSandboxWavePlan(round: number, config: SandboxConfig): Spaw
 export function previewSandboxWaveInfo(round: number, config: SandboxConfig): WavePreview {
   const plan = buildSandboxWavePlan(round, config);
 
-  let bossName = "-";
+  let bossStage: number | null = null;
   for (const key of plan) {
     if (!key.startsWith("boss_")) {
       continue;
     }
     const stage = Number.parseInt(key.slice(5), 10);
-    bossName = BOSS_PROFILES[Math.max(1, Math.min(stage, MAX_BOSS_STAGE))].name;
+    bossStage = Math.max(1, Math.min(stage, MAX_BOSS_STAGE));
     break;
   }
 
   return {
     count: plan.length,
-    boss: bossName !== "-",
-    bossName,
+    boss: bossStage !== null,
+    bossStage,
     basic: plan.filter((key) => key === "basic").length,
     runner: plan.filter((key) => key === "runner").length,
     brute: plan.filter((key) => key === "brute").length,

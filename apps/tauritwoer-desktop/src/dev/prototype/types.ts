@@ -117,10 +117,40 @@ export interface SandboxConfig {
   slots: SandboxSlot[];
 }
 
+export type SandboxValidationCode =
+  | "slot_id_required"
+  | "start_round_min"
+  | "base_count_non_negative"
+  | "add_every_10_non_negative"
+  | "multiplier_range"
+  | "boss_stage_range"
+  | "slots_must_be_array"
+  | "duplicate_id";
+
+export interface SandboxValidationIssue {
+  code: SandboxValidationCode;
+  slotIndex?: number;
+  min?: number;
+  max?: number;
+  id?: string;
+}
+
 export interface SandboxSlotValidationResult {
   valid: boolean;
-  errors: string[];
+  issues: SandboxValidationIssue[];
 }
+
+export type GameMessage =
+  | { code: "none" }
+  | { code: "space_to_start_wave" }
+  | { code: "victory_all_levels" }
+  | { code: "wave_cleared_next_level"; level: number }
+  | { code: "game_over" }
+  | { code: "level_started"; level: number; enemies: number; bossStage: number | null }
+  | { code: "tower_unlocks_at_level"; tower: TowerName; level: number }
+  | { code: "not_enough_money" }
+  | { code: "tower_cannot_be_placed" }
+  | { code: "tower_placed"; tower: TowerName };
 
 export interface EnemySnapshot {
   id: number;
@@ -142,7 +172,7 @@ export interface EnemySnapshot {
   splashResistance: number;
   regenPerSec: number;
   lifeDamage: number;
-  bossName: string;
+  bossStage: number | null;
   bossShape: BossShape;
 }
 
@@ -171,7 +201,7 @@ export interface TowerSnapshot {
 export interface WavePreview {
   count: number;
   boss: boolean;
-  bossName: string;
+  bossStage: number | null;
   basic: number;
   runner: number;
   brute: number;
@@ -194,8 +224,8 @@ export interface GameSnapshot {
   spawnInterval: number;
   spawnedThisWave: number;
   totalWaveEnemies: number;
-  currentWaveBossName: string;
-  message: string;
+  currentWaveBossStage: number | null;
+  message: GameMessage;
   messageTimer: number;
   towers: TowerSnapshot[];
   enemies: EnemySnapshot[];

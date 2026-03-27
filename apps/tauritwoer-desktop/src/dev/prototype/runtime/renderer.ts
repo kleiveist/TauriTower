@@ -1,15 +1,19 @@
 import { FIELD_W, GRID_SIZE, PATH_WIDTH, SCREEN_H, SCREEN_W, SIDEBAR_W } from "../data/constants";
 import { getMapDefinition } from "../data/maps";
 import { DIFFICULTIES, DIFFICULTY_ORDER } from "../data/difficulties";
-import {
-  TOWER_DESCRIPTIONS,
-  TOWER_ICON_LABELS,
-  TOWER_ORDER,
-  TOWER_SHORT_LABELS,
-  TOWER_TYPES,
-} from "../data/towers";
+import { TOWER_ICON_LABELS, TOWER_ORDER, TOWER_TYPES } from "../data/towers";
 import type { DifficultyName, EnemySnapshot, GameSnapshot, Point, TowerName } from "../types";
-import { difficultyLabel } from "./input";
+import {
+  formatGameMessage,
+  getBossName,
+  getMapShortLabel,
+  getTowerDescription,
+  getTowerName,
+  getTowerSpecial,
+  type DesignMode,
+  type PrototypeTranslations,
+  type UiLanguage,
+} from "./i18n";
 import {
   centeredRect,
   fieldRect,
@@ -19,7 +23,6 @@ import {
   sidebarWaveRect,
   startWaveButtonRect,
   towerCardRect,
-  towerInfoButtonRect,
 } from "./layout";
 import type { Rect, Viewport } from "./layout";
 import {
@@ -54,6 +57,10 @@ export interface TowerTooltipRenderState {
   source: "hover" | "touch";
 }
 
+export interface PauseRenderState {
+  confirmAction: "restart" | "menu" | null;
+}
+
 export interface RuntimeRenderState {
   pointerWorld: Point;
   speedMultiplier: number;
@@ -61,16 +68,61 @@ export interface RuntimeRenderState {
   gameIcon: CanvasImageSource | null;
   uiMode: ResponsiveUIMode;
   tooltipState: TowerTooltipRenderState | null;
+  language: UiLanguage;
+  designMode: DesignMode;
+  text: PrototypeTranslations;
+  pauseState: PauseRenderState | null;
 }
 
 export interface RenderHitAreas {
   startButton?: Rect;
   difficultyButtons: DifficultyHit[];
   towerCards: TowerHit[];
-  towerInfoButtons: TowerHit[];
   startWaveButton?: Rect;
   restartButton?: Rect;
   menuButton?: Rect;
+  pauseButton?: Rect;
+  pauseResumeButton?: Rect;
+  pauseRestartButton?: Rect;
+  pauseMenuButton?: Rect;
+  pauseConfirmCancelButton?: Rect;
+  pauseConfirmAcceptButton?: Rect;
+}
+
+interface CanvasTheme {
+  arcade: boolean;
+  frameBackground: string;
+  startGradientFrom: string;
+  startGradientTo: string;
+  panelFill: string;
+  panelBorder: string;
+  fieldFill: string;
+  gridColor: string;
+  pathMain: string;
+  pathEdge: string;
+  sidebarGradientFrom: string;
+  sidebarGradientTo: string;
+  sidebarDivider: string;
+  textPrimary: string;
+  textSecondary: string;
+  textMuted: string;
+  textAccent: string;
+  cardFill: string;
+  cardStroke: string;
+  tooltipFill: string;
+  tooltipStroke: string;
+  endBackdrop: string;
+  messageFill: string;
+  messageStroke: string;
+  buttonPrimary: string;
+  buttonPrimaryHover: string;
+  buttonPrimaryStroke: string;
+  buttonSecondary: string;
+  buttonSecondaryHover: string;
+  buttonSecondaryStroke: string;
+  buttonDanger: string;
+  buttonDangerHover: string;
+  buttonDangerStroke: string;
 }
 
 export function renderPrototypeFrame(
@@ -80,15 +132,15 @@ export function renderPrototypeFrame(
   snapshot: GameSnapshot,
   runtime: RuntimeRenderState,
 ): RenderHitAreas {
+  const theme = createCanvasTheme(runtime.designMode);
   const hitAreas: RenderHitAreas = {
     difficultyButtons: [],
     towerCards: [],
-    towerInfoButtons: [],
   };
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#0a1016";
+  ctx.fillStyle = theme.frameBackground;
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.restore();
 
@@ -97,21 +149,21 @@ export function renderPrototypeFrame(
   ctx.scale(viewport.scale, viewport.scale);
 
   if (screen === "start") {
-    drawStartScreen(ctx, hitAreas, runtime.gameIcon, runtime.pointerWorld, runtime.uiMode);
+    drawStartScreen(ctx, hitAreas, runtime, theme);
     ctx.restore();
     return hitAreas;
   }
 
   if (screen === "difficulty") {
-    drawDifficultyScreen(ctx, hitAreas, runtime.pointerWorld, runtime.uiMode);
+    drawDifficultyScreen(ctx, hitAreas, runtime, theme);
     ctx.restore();
     return hitAreas;
   }
 
-  drawGameScene(ctx, snapshot, hitAreas, runtime);
+  drawGameScene(ctx, snapshot, hitAreas, runtime, theme);
 
   if (screen === "game_over" || screen === "victory") {
-    drawEndOverlay(ctx, screen, hitAreas, runtime.pointerWorld);
+    drawEndOverlay(ctx, screen, hitAreas, runtime, theme);
   }
 
   ctx.restore();
@@ -121,80 +173,80 @@ export function renderPrototypeFrame(
 function drawStartScreen(
   ctx: CanvasRenderingContext2D,
   hitAreas: RenderHitAreas,
-  gameIcon: CanvasImageSource | null,
-  pointerWorld: Point,
-  uiMode: ResponsiveUIMode,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
 ): void {
   const gradient = ctx.createLinearGradient(0, 0, SCREEN_W, SCREEN_H);
-  gradient.addColorStop(0, "#15263a");
-  gradient.addColorStop(1, "#173145");
+  gradient.addColorStop(0, theme.startGradientFrom);
+  gradient.addColorStop(1, theme.startGradientTo);
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
-  const compact = uiMode === "compact";
-  const panel = centeredRect(compact ? 820 : 940, compact ? 500 : 540, compact ? -10 : -24);
-  roundRect(ctx, panel, 24, "#0f1824", "#4a6686", 2);
+  const compact = runtime.uiMode === "compact";
+  const panel = centeredRect(compact ? 860 : 980, compact ? 560 : 620, compact ? -10 : -20);
+  roundRect(ctx, panel, 24, theme.panelFill, theme.panelBorder, 2);
 
-  drawGameIconBadge(ctx, gameIcon, panel.x + 30, panel.y + 30, compact ? 100 : 122);
+  drawGameIconBadge(ctx, runtime.gameIcon, panel.x + 32, panel.y + 32, compact ? 104 : 124, theme);
 
-  ctx.fillStyle = "#f1f6ff";
-  ctx.font = compact ? "700 62px Arial" : "700 80px Arial";
+  const text = runtime.text.runtime.startScreen;
   ctx.textAlign = "center";
-  ctx.fillText("TauriTwoer Defense", SCREEN_W * 0.5 + 6, panel.y + (compact ? 124 : 136));
+  ctx.fillStyle = theme.textPrimary;
+  ctx.font = compact ? "700 60px Arial" : "700 78px Arial";
+  ctx.fillText(text.title, SCREEN_W * 0.5, panel.y + (compact ? 126 : 144));
 
-  ctx.font = compact ? "500 28px Arial" : "500 32px Arial";
-  ctx.fillStyle = "#b7c9de";
-  ctx.fillText("Canvas Prototype in Tauri + TypeScript", SCREEN_W * 0.5, panel.y + (compact ? 184 : 206));
+  ctx.fillStyle = theme.textSecondary;
+  ctx.font = compact ? "500 27px Arial" : "500 31px Arial";
+  ctx.fillText(text.subtitle, SCREEN_W * 0.5, panel.y + (compact ? 188 : 214));
 
-  const features = [
-    "Responsive Desktop + Compact Sidebar",
-    "Wave Formula: ceil(level * multiplier)",
-    "Boss every 10 levels",
-    "Panzer-Tower as late power spike",
-  ];
-
-  ctx.font = compact ? "500 24px Arial" : "500 29px Arial";
-  features.forEach((line, index) => {
-    ctx.fillText(line, SCREEN_W * 0.5, panel.y + (compact ? 246 : 284) + index * (compact ? 46 : 50));
+  ctx.fillStyle = theme.textMuted;
+  ctx.font = compact ? "500 23px Arial" : "500 28px Arial";
+  text.features.forEach((line, index) => {
+    ctx.fillText(line, SCREEN_W * 0.5, panel.y + (compact ? 248 : 292) + index * (compact ? 46 : 50));
   });
 
-  const startButton = centeredRect(compact ? 340 : 430, compact ? 84 : 92, compact ? 214 : 230);
-  const hovered = pointInRect(pointerWorld, startButton);
+  const startButton = centeredRect(compact ? 360 : 448, compact ? 86 : 96, compact ? 240 : 258);
+  const hovered = pointInRect(runtime.pointerWorld, startButton);
   roundRect(
     ctx,
     startButton,
     16,
-    hovered ? "#3d96ff" : "#2a81ff",
-    hovered ? "#d5e9ff" : "#b8d9ff",
+    hovered ? theme.buttonPrimaryHover : theme.buttonPrimary,
+    theme.buttonPrimaryStroke,
     3,
   );
-  ctx.fillStyle = "#ffffff";
-  ctx.font = compact ? "700 38px Arial" : "700 42px Arial";
-  ctx.fillText("Start", startButton.x + startButton.w * 0.5, startButton.y + (compact ? 55 : 60));
 
+  if (theme.arcade) {
+    applyGlow(ctx, theme.buttonPrimaryStroke, 18);
+  }
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = compact ? "700 37px Arial" : "700 42px Arial";
+  ctx.fillText(text.startButton, startButton.x + startButton.w * 0.5, startButton.y + (compact ? 56 : 62));
+
+  ctx.shadowBlur = 0;
   hitAreas.startButton = startButton;
 }
 
 function drawDifficultyScreen(
   ctx: CanvasRenderingContext2D,
   hitAreas: RenderHitAreas,
-  pointerWorld: Point,
-  uiMode: ResponsiveUIMode,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
 ): void {
   const gradient = ctx.createLinearGradient(0, 0, SCREEN_W, SCREEN_H);
-  gradient.addColorStop(0, "#112130");
-  gradient.addColorStop(1, "#1b3345");
+  gradient.addColorStop(0, theme.startGradientFrom);
+  gradient.addColorStop(1, theme.startGradientTo);
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
-  const compact = uiMode === "compact";
+  const compact = runtime.uiMode === "compact";
   ctx.textAlign = "center";
-  ctx.fillStyle = "#eef4ff";
-  ctx.font = compact ? "700 62px Arial" : "700 74px Arial";
-  ctx.fillText("Select Difficulty", SCREEN_W * 0.5, compact ? 148 : 164);
+  ctx.fillStyle = theme.textPrimary;
+  ctx.font = compact ? "700 58px Arial" : "700 72px Arial";
+  ctx.fillText(runtime.text.runtime.difficultyScreen.title, SCREEN_W * 0.5, compact ? 148 : 164);
 
-  const buttonWidth = compact ? 560 : 620;
-  const buttonHeight = compact ? 104 : 118;
+  const buttonWidth = compact ? 600 : 640;
+  const buttonHeight = compact ? 108 : 120;
   const startY = compact ? 218 : 244;
 
   DIFFICULTY_ORDER.forEach((difficulty, index) => {
@@ -205,27 +257,33 @@ function drawDifficultyScreen(
       h: buttonHeight,
     };
 
-    const hovered = pointInRect(pointerWorld, rect);
+    const hovered = pointInRect(runtime.pointerWorld, rect);
     roundRect(
       ctx,
       rect,
       16,
-      hovered ? "#24374b" : "#1a2b3d",
-      hovered ? "#9cc7ef" : "#75a4d6",
+      hovered ? theme.buttonSecondaryHover : theme.buttonSecondary,
+      theme.buttonSecondaryStroke,
       3,
     );
-    ctx.fillStyle = "#f4f8ff";
-    ctx.font = compact ? "700 34px Arial" : "700 39px Arial";
-    ctx.fillText(difficultyLabel(difficulty), rect.x + rect.w * 0.5, rect.y + (compact ? 46 : 52));
 
-    ctx.fillStyle = "#9fc1e4";
-    ctx.font = compact ? "500 22px Arial" : "500 24px Arial";
+    if (theme.arcade) {
+      applyGlow(ctx, theme.buttonSecondaryStroke, 13);
+    }
+
+    ctx.fillStyle = theme.textPrimary;
+    ctx.font = compact ? "700 34px Arial" : "700 38px Arial";
+    ctx.fillText(runtime.text.difficulty.labels[difficulty], rect.x + rect.w * 0.5, rect.y + (compact ? 47 : 53));
+
+    ctx.fillStyle = theme.textSecondary;
+    ctx.font = compact ? "500 21px Arial" : "500 24px Arial";
     ctx.fillText(
-      `Spawn multiplier x${DIFFICULTIES[difficulty].countMult.toFixed(1)}`,
+      `${runtime.text.runtime.difficultyScreen.multiplierLabel} x${DIFFICULTIES[difficulty].countMult.toFixed(1)}`,
       rect.x + rect.w * 0.5,
-      rect.y + (compact ? 78 : 86),
+      rect.y + (compact ? 80 : 87),
     );
 
+    ctx.shadowBlur = 0;
     hitAreas.difficultyButtons.push({ difficulty, rect });
   });
 }
@@ -235,26 +293,32 @@ function drawGameScene(
   snapshot: GameSnapshot,
   hitAreas: RenderHitAreas,
   runtime: RuntimeRenderState,
+  theme: CanvasTheme,
 ): void {
-  drawField(ctx);
-  drawPath(ctx, snapshot.mapId);
-  drawTowerPreview(ctx, runtime.towerPreview);
-  drawEntities(ctx, snapshot);
-  drawSidebar(ctx, snapshot, hitAreas, runtime);
+  drawField(ctx, theme);
+  drawPath(ctx, snapshot.mapId, theme);
+  drawTowerPreview(ctx, runtime.towerPreview, theme);
+  drawEntities(ctx, snapshot, runtime, theme);
+  drawSidebar(ctx, snapshot, hitAreas, runtime, theme);
 
-  if (runtime.uiMode === "compact" && runtime.tooltipState) {
-    drawCompactTowerTooltip(ctx, runtime.tooltipState);
+  if (runtime.tooltipState) {
+    drawTowerTooltip(ctx, snapshot, runtime, theme);
   }
 
-  drawTopMessage(ctx, snapshot.message);
+  const message = formatGameMessage(snapshot.message, runtime.language);
+  drawTopMessage(ctx, message, theme);
+
+  if (runtime.pauseState) {
+    drawPauseOverlay(ctx, hitAreas, runtime, theme);
+  }
 }
 
-function drawField(ctx: CanvasRenderingContext2D): void {
+function drawField(ctx: CanvasRenderingContext2D, theme: CanvasTheme): void {
   const field = fieldRect();
-  ctx.fillStyle = "#21362e";
+  ctx.fillStyle = theme.fieldFill;
   ctx.fillRect(field.x, field.y, field.w, field.h);
 
-  ctx.strokeStyle = "#2f4a40";
+  ctx.strokeStyle = theme.gridColor;
   ctx.lineWidth = 1;
   for (let x = 0; x <= FIELD_W; x += GRID_SIZE) {
     ctx.beginPath();
@@ -270,16 +334,19 @@ function drawField(ctx: CanvasRenderingContext2D): void {
   }
 }
 
-function drawPath(ctx: CanvasRenderingContext2D, mapId: GameSnapshot["mapId"]): void {
+function drawPath(ctx: CanvasRenderingContext2D, mapId: GameSnapshot["mapId"], theme: CanvasTheme): void {
   const pathPoints = getMapDefinition(mapId).pathPoints;
   if (pathPoints.length < 2) {
     return;
   }
 
-  ctx.strokeStyle = "#cbb37a";
+  ctx.strokeStyle = theme.pathMain;
   ctx.lineWidth = PATH_WIDTH;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
+  if (theme.arcade) {
+    applyGlow(ctx, theme.pathMain, 22);
+  }
 
   ctx.beginPath();
   ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
@@ -288,7 +355,8 @@ function drawPath(ctx: CanvasRenderingContext2D, mapId: GameSnapshot["mapId"]): 
   }
   ctx.stroke();
 
-  ctx.strokeStyle = "#7f6a3f";
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = theme.pathEdge;
   ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
@@ -301,13 +369,14 @@ function drawPath(ctx: CanvasRenderingContext2D, mapId: GameSnapshot["mapId"]): 
 function drawTowerPreview(
   ctx: CanvasRenderingContext2D,
   preview: TowerPreviewRenderState | null,
+  theme: CanvasTheme,
 ): void {
   if (!preview) {
     return;
   }
 
-  const rangeFill = preview.validPlacement ? "rgba(92, 214, 132, 0.20)" : "rgba(228, 102, 102, 0.20)";
-  const rangeStroke = preview.validPlacement ? "#99f0b8" : "#ffb1b1";
+  const rangeFill = preview.validPlacement ? (theme.arcade ? "rgba(70, 255, 188, 0.22)" : "rgba(92, 214, 132, 0.20)") : "rgba(255, 110, 145, 0.22)";
+  const rangeStroke = preview.validPlacement ? (theme.arcade ? "#65ffe4" : "#99f0b8") : "#ff94be";
 
   ctx.save();
   ctx.fillStyle = rangeFill;
@@ -318,16 +387,20 @@ function drawTowerPreview(
   ctx.strokeStyle = rangeStroke;
   ctx.lineWidth = 3;
   ctx.setLineDash([12, 9]);
+  if (theme.arcade) {
+    applyGlow(ctx, rangeStroke, 15);
+  }
   ctx.beginPath();
   ctx.arc(preview.position.x, preview.position.y, preview.range, 0, Math.PI * 2);
   ctx.stroke();
   ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
 
   const stats = TOWER_TYPES[preview.tower];
-  drawTowerBody(ctx, preview.position, stats.color, 0.7);
+  drawTowerBody(ctx, preview.position, stats.color, 0.76, theme);
 
   if (!preview.validPlacement) {
-    ctx.strokeStyle = "#ffb1b1";
+    ctx.strokeStyle = "#ff8db5";
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(preview.position.x - 16, preview.position.y - 16);
@@ -340,21 +413,31 @@ function drawTowerPreview(
   ctx.restore();
 }
 
-function drawEntities(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot): void {
+function drawEntities(
+  ctx: CanvasRenderingContext2D,
+  snapshot: GameSnapshot,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
+): void {
   for (const tower of snapshot.towers) {
     const stats = TOWER_TYPES[tower.towerType];
-    drawTowerBody(ctx, tower.pos, stats.color, 1.0);
+    drawTowerBody(ctx, tower.pos, stats.color, 1.0, theme);
   }
 
   for (const enemy of snapshot.enemies) {
-    drawEnemy(ctx, enemy);
+    drawEnemy(ctx, enemy, runtime, theme);
   }
 
   for (const bullet of snapshot.bullets) {
+    ctx.save();
     ctx.fillStyle = rgb(bullet.color);
+    if (theme.arcade) {
+      applyGlow(ctx, rgb(bullet.color), 14);
+    }
     ctx.beginPath();
     ctx.arc(bullet.pos.x, bullet.pos.y, bullet.radius, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -363,21 +446,26 @@ function drawTowerBody(
   pos: Point,
   color: [number, number, number],
   alpha: number,
+  theme: CanvasTheme,
 ): void {
   ctx.save();
   ctx.globalAlpha = alpha;
 
-  ctx.fillStyle = "#151b22";
+  ctx.fillStyle = theme.arcade ? "#100f1e" : "#151b22";
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, 28, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = rgb(color);
+  if (theme.arcade) {
+    applyGlow(ctx, rgb(color), 20);
+  }
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, 23, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = "#f4f7ff";
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = theme.arcade ? "#ffe96b" : "#f4f7ff";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, 9, 0, Math.PI * 2);
@@ -386,8 +474,17 @@ function drawTowerBody(
   ctx.restore();
 }
 
-function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemySnapshot): void {
+function drawEnemy(
+  ctx: CanvasRenderingContext2D,
+  enemy: EnemySnapshot,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
+): void {
+  ctx.save();
   ctx.fillStyle = rgb(enemy.color);
+  if (theme.arcade) {
+    applyGlow(ctx, rgb(enemy.color), enemy.enemyType === "boss" ? 22 : 10);
+  }
 
   if (enemy.enemyType === "runner") {
     ctx.beginPath();
@@ -409,7 +506,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemySnapshot): void {
   }
 
   if (enemy.enemyType === "boss") {
-    drawBossAura(ctx, enemy);
+    drawBossAura(ctx, enemy, theme);
   }
 
   const barWidth = enemy.enemyType === "boss" ? 92 : 38;
@@ -418,21 +515,28 @@ function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemySnapshot): void {
   const y = enemy.pos.y - enemy.radius - (enemy.enemyType === "boss" ? 24 : 14);
   const hpRatio = Math.max(0, Math.min(1, enemy.hp / enemy.maxHp));
 
-  roundRect(ctx, { x, y, w: barWidth, h: barHeight }, 3, "#4f1d1d");
-  roundRect(ctx, { x, y, w: barWidth * hpRatio, h: barHeight }, 3, "#54c670");
+  roundRect(ctx, { x, y, w: barWidth, h: barHeight }, 3, theme.arcade ? "#2c1139" : "#4f1d1d");
+  roundRect(ctx, { x, y, w: barWidth * hpRatio, h: barHeight }, 3, theme.arcade ? "#5aff9f" : "#54c670");
 
+  ctx.shadowBlur = 0;
   if (enemy.enemyType === "boss") {
-    ctx.fillStyle = "#f4f7ff";
+    ctx.fillStyle = theme.textPrimary;
     ctx.font = "600 16px Arial";
     ctx.textAlign = "center";
-    ctx.fillText(enemy.bossName, enemy.pos.x, y - 8);
+    ctx.fillText(getBossName(runtime.language, enemy.bossStage), enemy.pos.x, y - 8);
   }
+
+  ctx.restore();
 }
 
-function drawBossAura(ctx: CanvasRenderingContext2D, enemy: EnemySnapshot): void {
+function drawBossAura(ctx: CanvasRenderingContext2D, enemy: EnemySnapshot, theme: CanvasTheme): void {
   ctx.save();
-  ctx.strokeStyle = "#f9fbff";
+  ctx.strokeStyle = theme.arcade ? "#fff46f" : "#f9fbff";
   ctx.lineWidth = 2;
+  if (theme.arcade) {
+    applyGlow(ctx, ctx.strokeStyle, 16);
+  }
+
   const r = enemy.radius + 7;
 
   switch (enemy.bossShape) {
@@ -523,7 +627,7 @@ function drawBossAura(ctx: CanvasRenderingContext2D, enemy: EnemySnapshot): void
         { x: enemy.pos.x - r + 7, y: enemy.pos.y + 2, w: (r - 7) * 2, h: r },
         3,
         "transparent",
-        "#f9fbff",
+        theme.arcade ? "#fff46f" : "#f9fbff",
         2,
       );
       break;
@@ -543,15 +647,16 @@ function drawSidebar(
   snapshot: GameSnapshot,
   hitAreas: RenderHitAreas,
   runtime: RuntimeRenderState,
+  theme: CanvasTheme,
 ): void {
   const sidebar = sidebarRect();
 
   const sidebarGradient = ctx.createLinearGradient(sidebar.x, 0, sidebar.x + sidebar.w, SCREEN_H);
-  sidebarGradient.addColorStop(0, "#152332");
-  sidebarGradient.addColorStop(1, "#192e42");
+  sidebarGradient.addColorStop(0, theme.sidebarGradientFrom);
+  sidebarGradient.addColorStop(1, theme.sidebarGradientTo);
   roundRect(ctx, sidebar, 0, sidebarGradient);
 
-  ctx.strokeStyle = "#3f5b77";
+  ctx.strokeStyle = theme.sidebarDivider;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(FIELD_W, 0);
@@ -561,15 +666,41 @@ function drawSidebar(
   const mode = runtime.uiMode;
   const layout = getSidebarLayoutConfig(mode);
 
-  drawGameIconBadge(ctx, runtime.gameIcon, FIELD_W + SIDEBAR_W - 96, 16, mode === "compact" ? 58 : 66);
+  drawGameIconBadge(ctx, runtime.gameIcon, FIELD_W + SIDEBAR_W - 96, 16, mode === "compact" ? 58 : 66, theme);
 
   ctx.textAlign = "left";
-  ctx.fillStyle = "#f2f7ff";
+  ctx.fillStyle = theme.textPrimary;
   ctx.font = mode === "compact" ? "700 40px Arial" : "700 46px Arial";
-  ctx.fillText("Tower Defense", FIELD_W + 26, layout.titleY);
+  ctx.fillText(runtime.text.runtime.sidebar.title, FIELD_W + 26, layout.titleY);
 
-  drawSidebarInfo(ctx, snapshot, runtime.speedMultiplier, mode);
-  drawSidebarWavePreview(ctx, snapshot, mode);
+  const pauseButton: Rect = {
+    x: FIELD_W + SIDEBAR_W - (mode === "compact" ? 188 : 218),
+    y: mode === "compact" ? 18 : 22,
+    w: mode === "compact" ? 78 : 88,
+    h: mode === "compact" ? 38 : 44,
+  };
+  const pauseHovered = pointInRect(runtime.pointerWorld, pauseButton);
+  roundRect(
+    ctx,
+    pauseButton,
+    10,
+    pauseHovered ? theme.buttonSecondaryHover : theme.buttonSecondary,
+    theme.buttonSecondaryStroke,
+    2,
+  );
+  if (theme.arcade) {
+    applyGlow(ctx, theme.buttonSecondaryStroke, 10);
+  }
+
+  ctx.fillStyle = theme.textPrimary;
+  ctx.textAlign = "center";
+  ctx.font = mode === "compact" ? "700 24px Arial" : "700 26px Arial";
+  ctx.fillText(runtime.pauseState ? "▶" : "II", pauseButton.x + pauseButton.w * 0.5, pauseButton.y + pauseButton.h * 0.68);
+  ctx.shadowBlur = 0;
+  hitAreas.pauseButton = pauseButton;
+
+  drawSidebarInfo(ctx, snapshot, runtime, theme);
+  drawSidebarWavePreview(ctx, snapshot, runtime, theme);
 
   for (let i = 0; i < TOWER_ORDER.length; i += 1) {
     const tower = TOWER_ORDER[i];
@@ -581,19 +712,11 @@ function drawSidebar(
     const selected = snapshot.selectedTowerName === tower;
     const hovered = pointInRect(runtime.pointerWorld, card);
 
-    if (mode === "compact") {
-      drawCompactTowerCard(ctx, card, tower, unlocked, affordable, selected, hovered);
-      const infoRect = towerInfoButtonRect(card, mode);
-      drawCompactInfoButton(ctx, infoRect, tower, runtime.tooltipState, hovered);
-      hitAreas.towerInfoButtons.push({ tower, rect: infoRect });
-    } else {
-      drawDesktopTowerCard(ctx, card, tower, unlocked, affordable, selected, hovered);
-    }
-
+    drawTowerCard(ctx, card, tower, unlocked, affordable, selected, hovered, mode, runtime, theme);
     hitAreas.towerCards.push({ tower, rect: card });
   }
 
-  drawSidebarControls(ctx, mode);
+  drawSidebarControls(ctx, runtime, theme);
 
   const startWaveRect = startWaveButtonRect(mode);
   const canStart = !snapshot.waveActive && snapshot.wavePlan.length === 0;
@@ -603,105 +726,133 @@ function drawSidebar(
     ctx,
     startWaveRect,
     12,
-    canStart ? (hoveredStart ? "#25a668" : "#1f8c58") : hoveredStart ? "#43688a" : "#355572",
-    canStart ? "#b4ffd9" : "#7398bc",
+    canStart
+      ? hoveredStart
+        ? theme.buttonPrimaryHover
+        : theme.buttonPrimary
+      : hoveredStart
+        ? theme.buttonSecondaryHover
+        : theme.buttonSecondary,
+    canStart ? theme.buttonPrimaryStroke : theme.buttonSecondaryStroke,
     2,
   );
-  ctx.fillStyle = "#f2f7ff";
+
+  if (theme.arcade) {
+    applyGlow(ctx, canStart ? theme.buttonPrimaryStroke : theme.buttonSecondaryStroke, 12);
+  }
+
+  ctx.fillStyle = theme.textPrimary;
   ctx.font = mode === "compact" ? "700 23px Arial" : "700 28px Arial";
   ctx.textAlign = "center";
   ctx.fillText(
-    canStart ? "Start Wave" : `Wave Running (${snapshot.spawnedThisWave}/${snapshot.totalWaveEnemies})`,
+    canStart
+      ? runtime.text.runtime.sidebar.startWave
+      : interpolate(runtime.text.runtime.sidebar.waveRunning, {
+          spawned: snapshot.spawnedThisWave,
+          total: snapshot.totalWaveEnemies,
+        }),
     startWaveRect.x + startWaveRect.w * 0.5,
     startWaveRect.y + (mode === "compact" ? 38 : 40),
   );
 
+  ctx.shadowBlur = 0;
   hitAreas.startWaveButton = startWaveRect;
 }
 
 function drawSidebarInfo(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
-  speedMultiplier: number,
-  mode: ResponsiveUIMode,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
 ): void {
+  const mode = runtime.uiMode;
   const layout = getSidebarLayoutConfig(mode);
   const infoRect = sidebarInfoRect(mode);
-  roundRect(ctx, infoRect, 14, "#223548", "#4b6988", 2);
+  roundRect(ctx, infoRect, 14, theme.cardFill, theme.cardStroke, 2);
 
   const selectedTower = snapshot.selectedTowerName ? TOWER_TYPES[snapshot.selectedTowerName] : null;
-  const selectedDps = selectedTower ? formatTowerDps(selectedTower) + " DPS" : "-";
-  const mapLabel = getMapDefinition(snapshot.mapId).shortLabel;
+  const selectedTowerLabel = snapshot.selectedTowerName
+    ? getTowerName(runtime.language, snapshot.selectedTowerName)
+    : runtime.text.runtime.sidebar.none;
+  const selectedDps = selectedTower ? `${formatTowerDps(selectedTower)} ${runtime.text.runtime.sidebar.dps}` : "-";
+  const modeLabel = snapshot.mode === "sandbox" ? runtime.text.mode.sandboxTitle : runtime.text.mode.classicTitle;
 
   const lineX = infoRect.x + 14;
   const yStep = mode === "compact" ? 22 : 25;
   const yStart = infoRect.y + (mode === "compact" ? 28 : 34);
+  const sidebarText = runtime.text.runtime.sidebar;
 
   drawInfoLine(
     ctx,
-    "Rules",
-    difficultyLabel(snapshot.difficultyName) + " | " + snapshot.mode,
+    sidebarText.rules,
+    `${runtime.text.difficulty.labels[snapshot.difficultyName]} | ${modeLabel}`,
     lineX,
     yStart,
     layout.infoValueOffset,
     mode,
+    theme,
   );
-  drawInfoLine(ctx, "Map", mapLabel, lineX, yStart + yStep, layout.infoValueOffset, mode);
   drawInfoLine(
     ctx,
-    "Level",
-    String(Math.min(snapshot.level, snapshot.maxLevel)) + "/" + String(snapshot.maxLevel),
+    sidebarText.map,
+    getMapShortLabel(runtime.language, snapshot.mapId),
+    lineX,
+    yStart + yStep,
+    layout.infoValueOffset,
+    mode,
+    theme,
+  );
+  drawInfoLine(
+    ctx,
+    sidebarText.level,
+    `${Math.min(snapshot.level, snapshot.maxLevel)}/${snapshot.maxLevel}`,
     lineX,
     yStart + yStep * 2,
     layout.infoValueOffset,
     mode,
+    theme,
   );
-  drawInfoLine(ctx, "Lives", String(snapshot.lives), lineX, yStart + yStep * 3, layout.infoValueOffset, mode);
-  drawInfoLine(ctx, "Money", String(snapshot.money), lineX, yStart + yStep * 4, layout.infoValueOffset, mode);
+  drawInfoLine(ctx, sidebarText.lives, String(snapshot.lives), lineX, yStart + yStep * 3, layout.infoValueOffset, mode, theme);
+  drawInfoLine(ctx, sidebarText.money, String(snapshot.money), lineX, yStart + yStep * 4, layout.infoValueOffset, mode, theme);
+  drawInfoLine(ctx, sidebarText.selected, selectedTowerLabel, lineX, yStart + yStep * 5, layout.infoValueOffset, mode, theme);
+  drawInfoLine(ctx, sidebarText.dps, selectedDps, lineX, yStart + yStep * 6, layout.infoValueOffset, mode, theme);
   drawInfoLine(
     ctx,
-    "Selected",
-    snapshot.selectedTowerName ?? "None",
-    lineX,
-    yStart + yStep * 5,
-    layout.infoValueOffset,
-    mode,
-  );
-  drawInfoLine(ctx, "DPS", selectedDps, lineX, yStart + yStep * 6, layout.infoValueOffset, mode);
-  drawInfoLine(
-    ctx,
-    "Speed",
-    speedMultiplier.toFixed(1) + "x",
+    sidebarText.speed,
+    `${runtime.speedMultiplier.toFixed(1)}x`,
     lineX,
     yStart + yStep * 7,
     layout.infoValueOffset,
     mode,
+    theme,
   );
 }
 
 function drawSidebarWavePreview(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
-  mode: ResponsiveUIMode,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
 ): void {
+  const mode = runtime.uiMode;
   const waveRect = sidebarWaveRect(mode);
-  roundRect(ctx, waveRect, 12, "#233244", "#4b6887", 2);
+  roundRect(ctx, waveRect, 12, theme.cardFill, theme.cardStroke, 2);
 
-  ctx.fillStyle = "#dce8f7";
+  ctx.fillStyle = theme.textSecondary;
   ctx.font = mode === "compact" ? "600 19px Arial" : "600 21px Arial";
+  ctx.textAlign = "left";
+
+  const enemyPreview = `${runtime.text.runtime.sidebar.nextWave} ${snapshot.nextWavePreview.count} | ${runtime.text.preview.basic}:${snapshot.nextWavePreview.basic} ${runtime.text.preview.runner}:${snapshot.nextWavePreview.runner} ${runtime.text.preview.brute}:${snapshot.nextWavePreview.brute} ${runtime.text.preview.shield}:${snapshot.nextWavePreview.shield}`;
+  ctx.fillText(enemyPreview, waveRect.x + 10, waveRect.y + (mode === "compact" ? 32 : 34));
+
   ctx.fillText(
-    `Next ${snapshot.nextWavePreview.count} | B:${snapshot.nextWavePreview.basic} R:${snapshot.nextWavePreview.runner} Br:${snapshot.nextWavePreview.brute} Sh:${snapshot.nextWavePreview.shield}`,
-    waveRect.x + 10,
-    waveRect.y + (mode === "compact" ? 32 : 34),
-  );
-  ctx.fillText(
-    `Boss: ${snapshot.nextWavePreview.bossName}`,
+    `${runtime.text.runtime.sidebar.boss}: ${getBossName(runtime.language, snapshot.nextWavePreview.bossStage)}`,
     waveRect.x + 10,
     waveRect.y + (mode === "compact" ? 60 : 66),
   );
 }
 
-function drawDesktopTowerCard(
+function drawTowerCard(
   ctx: CanvasRenderingContext2D,
   card: Rect,
   tower: TowerName,
@@ -709,267 +860,341 @@ function drawDesktopTowerCard(
   affordable: boolean,
   selected: boolean,
   hovered: boolean,
+  mode: ResponsiveUIMode,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
 ): void {
   const stats = TOWER_TYPES[tower];
 
-  const base = !unlocked ? "#30343a" : affordable ? "#24394f" : "#3c2f36";
-  const hover = !unlocked ? "#353a42" : affordable ? "#2b4863" : "#4b3a45";
+  const baseFill = !unlocked
+    ? theme.arcade
+      ? "#291936"
+      : "#30343a"
+    : affordable
+      ? theme.arcade
+        ? "#102237"
+        : "#24394f"
+      : theme.arcade
+        ? "#371425"
+        : "#3c2f36";
 
-  let fill = hovered ? hover : base;
+  const hoverFill = !unlocked
+    ? theme.arcade
+      ? "#312042"
+      : "#353a42"
+    : affordable
+      ? theme.arcade
+        ? "#16314d"
+        : "#2b4863"
+      : theme.arcade
+        ? "#4a1d33"
+        : "#4b3a45";
+
+  let fill = hovered ? hoverFill : baseFill;
   if (selected) {
-    fill = hovered ? "#3f6d98" : "#365f86";
+    fill = theme.arcade ? (hovered ? "#0d4d5d" : "#0a4050") : hovered ? "#3f6d98" : "#365f86";
   }
 
-  const border = selected ? "#b6deff" : !unlocked ? "#6a727b" : affordable ? rgb(stats.color) : "#c68f9b";
+  const border = selected
+    ? theme.arcade
+      ? "#3cfffc"
+      : "#b6deff"
+    : !unlocked
+      ? theme.arcade
+        ? "#9e7eb1"
+        : "#6a727b"
+      : affordable
+        ? rgb(stats.color)
+        : theme.arcade
+          ? "#ff74b2"
+          : "#c68f9b";
 
-  roundRect(ctx, card, 12, fill, border, selected ? 3 : 2);
+  roundRect(ctx, card, mode === "compact" ? 14 : 12, fill, border, selected ? 3 : 2);
 
-  const iconCenter = { x: card.x + 28, y: card.y + 32 };
-  drawTowerGlyph(ctx, iconCenter, 16, stats.color, TOWER_ICON_LABELS[tower]);
-
-  ctx.fillStyle = "#f3f7ff";
-  ctx.font = "700 22px Arial";
-  ctx.textAlign = "left";
-  ctx.fillText(tower, card.x + 56, card.y + 28);
-
-  ctx.fillStyle = affordable ? "#c5f5d2" : "#ffc4c4";
-  ctx.font = "600 18px Arial";
-  ctx.fillText(`Cost ${stats.cost}`, card.x + 10, card.y + 56);
-
-  ctx.fillStyle = "#d6e5f8";
-  ctx.fillText(`DPS ${formatTowerDps(stats)}  RNG ${Math.round(stats.range)}`, card.x + 10, card.y + 80);
-
-  ctx.fillStyle = "#a9c0d8";
-  ctx.font = "500 16px Arial";
-  ctx.fillText(TOWER_DESCRIPTIONS[tower], card.x + 10, card.y + 102);
-
-  if (!unlocked) {
-    ctx.fillStyle = "#ffdd8d";
-    ctx.fillText(`Unlock at level ${stats.unlock}`, card.x + 10, card.y + 122);
-  }
-}
-
-function drawCompactTowerCard(
-  ctx: CanvasRenderingContext2D,
-  card: Rect,
-  tower: TowerName,
-  unlocked: boolean,
-  affordable: boolean,
-  selected: boolean,
-  hovered: boolean,
-): void {
-  const stats = TOWER_TYPES[tower];
-  const shortLabel = TOWER_SHORT_LABELS[tower];
-
-  const base = !unlocked ? "#2f3338" : affordable ? "#203245" : "#3a2d33";
-  const hover = !unlocked ? "#353b42" : affordable ? "#2a4560" : "#4a3a44";
-  let fill = hovered ? hover : base;
-  if (selected) {
-    fill = hovered ? "#3f6f9b" : "#356086";
+  if (theme.arcade) {
+    applyGlow(ctx, border, selected ? 16 : 9);
   }
 
-  const border = selected ? "#bde2ff" : !unlocked ? "#6b737b" : affordable ? rgb(stats.color) : "#c9929f";
+  drawTowerGlyph(
+    ctx,
+    { x: card.x + card.w * 0.5, y: card.y + card.h * (mode === "compact" ? 0.43 : 0.39) },
+    mode === "compact" ? 20 : 24,
+    stats.color,
+    TOWER_ICON_LABELS[tower],
+    theme,
+  );
 
-  roundRect(ctx, card, 14, fill, border, selected ? 3 : 2);
+  const costBadge: Rect = {
+    x: card.x + 10,
+    y: card.y + card.h - (mode === "compact" ? 34 : 38),
+    w: card.w - 20,
+    h: mode === "compact" ? 24 : 28,
+  };
 
-  drawTowerGlyph(ctx, { x: card.x + 24, y: card.y + 28 }, 15, stats.color, TOWER_ICON_LABELS[tower]);
+  const costFill = affordable ? (theme.arcade ? "rgba(35, 124, 77, 0.7)" : "rgba(32, 120, 72, 0.58)") : theme.arcade ? "rgba(145, 41, 84, 0.72)" : "rgba(128, 45, 52, 0.62)";
+  roundRect(ctx, costBadge, 8, costFill);
 
-  ctx.textAlign = "left";
-  ctx.fillStyle = "#f0f6ff";
-  ctx.font = "700 18px Arial";
-  ctx.fillText(shortLabel, card.x + 46, card.y + 24);
-
-  ctx.fillStyle = affordable ? "#c6f4d4" : "#ffbec1";
-  ctx.font = "600 17px Arial";
-  ctx.fillText(`${stats.cost}`, card.x + 10, card.y + 56);
-
-  ctx.fillStyle = "#dbe7f9";
-  ctx.fillText(`${formatTowerDps(stats)} DPS`, card.x + 10, card.y + 82);
-
-  ctx.fillStyle = "#9eb9d6";
-  ctx.font = "500 14px Arial";
-  ctx.fillText(`RNG ${Math.round(stats.range)}`, card.x + 10, card.y + 104);
-
-  if (!unlocked) {
-    ctx.fillStyle = "rgba(22, 24, 28, 0.68)";
-    roundRect(ctx, { x: card.x + 6, y: card.y + card.h - 28, w: card.w - 12, h: 22 }, 8, "rgba(14,18,23,0.74)");
-    ctx.fillStyle = "#ffdd8d";
-    ctx.font = "600 13px Arial";
-    ctx.fillText(`Unlock L${stats.unlock}`, card.x + 12, card.y + card.h - 12);
-  }
-}
-
-function drawCompactInfoButton(
-  ctx: CanvasRenderingContext2D,
-  rect: Rect,
-  tower: TowerName,
-  tooltipState: TowerTooltipRenderState | null,
-  hovered: boolean,
-): void {
-  const active = tooltipState?.tower === tower && tooltipState.source === "touch";
-  const fill = active ? "#4a8de2" : hovered ? "#385674" : "#2d445c";
-  const stroke = active ? "#d4e8ff" : "#9fb9d3";
-
-  roundRect(ctx, rect, 9, fill, stroke, 2);
-  ctx.fillStyle = "#f2f8ff";
-  ctx.font = "700 18px Arial";
+  ctx.shadowBlur = 0;
   ctx.textAlign = "center";
-  ctx.fillText("i", rect.x + rect.w * 0.5, rect.y + rect.h * 0.68);
+  ctx.fillStyle = theme.textPrimary;
+  ctx.font = mode === "compact" ? "700 16px Arial" : "700 18px Arial";
+  ctx.fillText(`${runtime.text.runtime.tower.tooltip.cost} ${stats.cost}`, costBadge.x + costBadge.w * 0.5, costBadge.y + costBadge.h * 0.68);
+
+  if (!unlocked) {
+    ctx.fillStyle = theme.arcade ? "#ffe06e" : "#ffdd8d";
+    ctx.font = mode === "compact" ? "600 13px Arial" : "600 14px Arial";
+    ctx.fillText(`#${stats.unlock}`, card.x + card.w - 18, card.y + 20);
+  }
 }
 
-function drawSidebarControls(ctx: CanvasRenderingContext2D, mode: ResponsiveUIMode): void {
+function drawSidebarControls(
+  ctx: CanvasRenderingContext2D,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
+): void {
+  const mode = runtime.uiMode;
   const layout = getSidebarLayoutConfig(mode);
 
-  ctx.fillStyle = "#9ab4ce";
+  ctx.fillStyle = theme.textMuted;
   ctx.font = mode === "compact" ? "500 14px Arial" : "500 15px Arial";
   ctx.textAlign = "left";
 
   if (mode === "compact") {
-    ctx.fillText("Tap card to buy, tap i for details", FIELD_W + 26, layout.controlsPrimaryY);
-    ctx.fillText("[1-5] Tower  [Space] Wave  [Ctrl +/-] Speed  [Esc] Clear", FIELD_W + 26, layout.controlsSecondaryY);
+    ctx.fillText(runtime.text.runtime.sidebar.controlsCompactPrimary, FIELD_W + 26, layout.controlsPrimaryY);
+    ctx.fillText(runtime.text.runtime.sidebar.controlsCompactSecondary, FIELD_W + 26, layout.controlsSecondaryY);
     return;
   }
 
-  ctx.fillText("Controls: [1-5] Tower  [Space] Wave  [R] Restart", FIELD_W + 30, layout.controlsPrimaryY);
-  ctx.fillText("[Ctrl +] Faster  [Ctrl -] Slower  [Esc/Right Click] Clear  [M] Menu", FIELD_W + 30, layout.controlsSecondaryY);
+  ctx.fillText(runtime.text.runtime.sidebar.controlsDesktopPrimary, FIELD_W + 30, layout.controlsPrimaryY);
+  ctx.fillText(runtime.text.runtime.sidebar.controlsDesktopSecondary, FIELD_W + 30, layout.controlsSecondaryY);
 }
 
-function drawCompactTowerTooltip(
+function drawTowerTooltip(
   ctx: CanvasRenderingContext2D,
-  tooltipState: TowerTooltipRenderState,
+  snapshot: GameSnapshot,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
 ): void {
+  const tooltipState = runtime.tooltipState;
+  if (!tooltipState) {
+    return;
+  }
+
   const tower = tooltipState.tower;
   const stats = TOWER_TYPES[tower];
-  const tooltipSize = { w: 340, h: 170 };
+  const tooltipSize = runtime.uiMode === "compact" ? { w: 356, h: 196 } : { w: 374, h: 210 };
+
   const pos = resolveTooltipPlacement(
     tooltipState.anchor,
     { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H },
     tooltipSize,
-    { margin: 16, offset: 14, preferAbove: true },
+    { margin: 16, offset: 14, preferAbove: runtime.uiMode !== "compact" },
   );
 
-  roundRect(ctx, { x: pos.x, y: pos.y, w: tooltipSize.w, h: tooltipSize.h }, 14, "rgba(11, 17, 26, 0.97)", "#79a4cf", 2);
+  roundRect(ctx, { x: pos.x, y: pos.y, w: tooltipSize.w, h: tooltipSize.h }, 14, theme.tooltipFill, theme.tooltipStroke, 2);
+  if (theme.arcade) {
+    applyGlow(ctx, theme.tooltipStroke, 18);
+  }
 
-  drawTowerGlyph(ctx, { x: pos.x + 22, y: pos.y + 28 }, 16, stats.color, TOWER_ICON_LABELS[tower]);
+  drawTowerGlyph(ctx, { x: pos.x + 24, y: pos.y + 30 }, 16, stats.color, TOWER_ICON_LABELS[tower], theme);
 
   ctx.textAlign = "left";
-  ctx.fillStyle = "#f0f6ff";
+  ctx.fillStyle = theme.textPrimary;
   ctx.font = "700 22px Arial";
-  ctx.fillText(tower, pos.x + 46, pos.y + 30);
+  ctx.fillText(getTowerName(runtime.language, tower), pos.x + 50, pos.y + 32);
 
-  ctx.fillStyle = "#cde2f8";
+  ctx.fillStyle = theme.textSecondary;
   ctx.font = "600 17px Arial";
-  ctx.fillText(`Cost ${stats.cost}`, pos.x + 16, pos.y + 60);
-  ctx.fillText(`DPS ${formatTowerDps(stats)}`, pos.x + 136, pos.y + 60);
-  ctx.fillText(`Range ${Math.round(stats.range)}`, pos.x + 248, pos.y + 60);
+  ctx.fillText(`${runtime.text.runtime.tower.tooltip.cost} ${stats.cost}`, pos.x + 16, pos.y + 64);
+  ctx.fillText(`${runtime.text.runtime.tower.tooltip.dps} ${formatTowerDps(stats)}`, pos.x + 142, pos.y + 64);
+  ctx.fillText(`${runtime.text.runtime.tower.tooltip.range} ${Math.round(stats.range)}`, pos.x + 258, pos.y + 64);
 
-  ctx.fillStyle = "#a8c3de";
+  ctx.fillStyle = theme.textPrimary;
   ctx.font = "500 16px Arial";
-  ctx.fillText(TOWER_DESCRIPTIONS[tower], pos.x + 16, pos.y + 92);
+  ctx.fillText(getTowerDescription(runtime.language, tower), pos.x + 16, pos.y + 94);
 
-  ctx.fillStyle = "#9fc0df";
+  ctx.fillStyle = theme.textSecondary;
   ctx.font = "500 15px Arial";
-  ctx.fillText(`Special: ${towerSpecialText(tower)}`, pos.x + 16, pos.y + 120);
+  ctx.fillText(`${runtime.text.runtime.tower.tooltip.special}: ${formatTowerSpecialLine(runtime, tower)}`, pos.x + 16, pos.y + 122);
 
-  ctx.fillStyle = "#89aac8";
+  if (snapshot.level < stats.unlock) {
+    ctx.fillStyle = theme.textAccent;
+    ctx.font = "500 14px Arial";
+    ctx.fillText(
+      interpolate(runtime.text.runtime.tower.tooltip.unlockAtLevel, { level: stats.unlock }),
+      pos.x + 16,
+      pos.y + 146,
+    );
+  }
+
+  ctx.fillStyle = theme.textMuted;
   ctx.font = "500 14px Arial";
-  ctx.fillText(tooltipState.source === "touch" ? "Tap i again to close" : "Hover tooltip", pos.x + 16, pos.y + 148);
+  ctx.fillText(
+    tooltipState.source === "touch" ? runtime.text.runtime.tower.tooltip.tapHint : runtime.text.runtime.tower.tooltip.hoverHint,
+    pos.x + 16,
+    pos.y + tooltipSize.h - 14,
+  );
+
+  ctx.shadowBlur = 0;
 }
 
-function towerSpecialText(tower: TowerName): string {
-  const stats = TOWER_TYPES[tower];
-
-  if (tower === "Stunner") {
-    const slow = stats.slowFactor ? Math.round((1 - stats.slowFactor) * 100) : 0;
-    return `Slow ${slow}% for ${stats.slowDuration?.toFixed(1) ?? "0.0"}s`;
-  }
-  if (tower === "Bombarman") {
-    return `Splash radius ${Math.round(stats.splashRadius ?? 0)}`;
-  }
-  if (tower === "Panzer-Tower") {
-    return `Heavy cannon splash ${Math.round(stats.splashRadius ?? 0)}`;
-  }
-  if (tower === "Scharfschuetze") {
-    return "Long-range precision shots";
-  }
-
-  return "Reliable single target fire";
-}
-
-function drawTowerGlyph(
+function drawPauseOverlay(
   ctx: CanvasRenderingContext2D,
-  center: Point,
-  radius: number,
-  color: [number, number, number],
-  label: string,
+  hitAreas: RenderHitAreas,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
 ): void {
-  ctx.fillStyle = "#111821";
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radius + 3, 0, Math.PI * 2);
-  ctx.fill();
+  const pauseState = runtime.pauseState;
+  if (!pauseState) {
+    return;
+  }
 
-  ctx.fillStyle = rgb(color);
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.fillStyle = theme.arcade ? "rgba(6, 0, 18, 0.72)" : "rgba(8, 12, 18, 0.68)";
+  ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
-  ctx.fillStyle = "#f1f6ff";
-  ctx.font = "700 14px Arial";
+  const compact = runtime.uiMode === "compact";
+  const panel = centeredRect(compact ? 560 : 640, compact ? 360 : 380, -12);
+  roundRect(ctx, panel, 18, theme.panelFill, theme.panelBorder, 2);
+
   ctx.textAlign = "center";
-  ctx.fillText(label, center.x, center.y + 5);
+  ctx.fillStyle = theme.textPrimary;
+  ctx.font = compact ? "700 48px Arial" : "700 56px Arial";
+  ctx.fillText(runtime.text.runtime.pause.title, SCREEN_W * 0.5, panel.y + (compact ? 84 : 92));
+
+  if (!pauseState.confirmAction) {
+    ctx.fillStyle = theme.textSecondary;
+    ctx.font = compact ? "500 22px Arial" : "500 24px Arial";
+    ctx.fillText(runtime.text.runtime.pause.subtitle, SCREEN_W * 0.5, panel.y + (compact ? 124 : 136));
+
+    const resumeButton: Rect = {
+      x: panel.x + 48,
+      y: panel.y + (compact ? 172 : 186),
+      w: panel.w - 96,
+      h: compact ? 56 : 62,
+    };
+    const restartButton: Rect = {
+      x: panel.x + 48,
+      y: resumeButton.y + resumeButton.h + 14,
+      w: panel.w - 96,
+      h: compact ? 56 : 62,
+    };
+    const menuButton: Rect = {
+      x: panel.x + 48,
+      y: restartButton.y + restartButton.h + 14,
+      w: panel.w - 96,
+      h: compact ? 56 : 62,
+    };
+
+    drawActionButton(ctx, resumeButton, runtime.text.runtime.pause.resume, theme.buttonPrimary, theme.buttonPrimaryHover, theme.buttonPrimaryStroke, runtime.pointerWorld, theme);
+    drawActionButton(ctx, restartButton, runtime.text.runtime.pause.restart, theme.buttonDanger, theme.buttonDangerHover, theme.buttonDangerStroke, runtime.pointerWorld, theme);
+    drawActionButton(ctx, menuButton, runtime.text.runtime.pause.menu, theme.buttonSecondary, theme.buttonSecondaryHover, theme.buttonSecondaryStroke, runtime.pointerWorld, theme);
+
+    hitAreas.pauseResumeButton = resumeButton;
+    hitAreas.pauseRestartButton = restartButton;
+    hitAreas.pauseMenuButton = menuButton;
+    return;
+  }
+
+  const isRestart = pauseState.confirmAction === "restart";
+  const confirmTitle = isRestart
+    ? runtime.text.runtime.pause.restartConfirmTitle
+    : runtime.text.runtime.pause.menuConfirmTitle;
+
+  ctx.fillStyle = theme.textSecondary;
+  ctx.font = compact ? "600 28px Arial" : "600 31px Arial";
+  ctx.fillText(confirmTitle, SCREEN_W * 0.5, panel.y + (compact ? 146 : 158));
+
+  ctx.fillStyle = theme.textMuted;
+  ctx.font = compact ? "500 20px Arial" : "500 22px Arial";
+  ctx.fillText(runtime.text.runtime.pause.confirmBody, SCREEN_W * 0.5, panel.y + (compact ? 186 : 202));
+
+  const cancelButton: Rect = {
+    x: panel.x + 58,
+    y: panel.y + (compact ? 236 : 252),
+    w: panel.w - 116,
+    h: compact ? 56 : 62,
+  };
+  const confirmButton: Rect = {
+    x: panel.x + 58,
+    y: cancelButton.y + cancelButton.h + 14,
+    w: panel.w - 116,
+    h: compact ? 56 : 62,
+  };
+
+  drawActionButton(ctx, cancelButton, runtime.text.runtime.pause.cancel, theme.buttonSecondary, theme.buttonSecondaryHover, theme.buttonSecondaryStroke, runtime.pointerWorld, theme);
+  drawActionButton(ctx, confirmButton, runtime.text.runtime.pause.confirm, theme.buttonPrimary, theme.buttonPrimaryHover, theme.buttonPrimaryStroke, runtime.pointerWorld, theme);
+
+  hitAreas.pauseConfirmCancelButton = cancelButton;
+  hitAreas.pauseConfirmAcceptButton = confirmButton;
 }
 
 function drawEndOverlay(
   ctx: CanvasRenderingContext2D,
   screen: PrototypeScreen,
   hitAreas: RenderHitAreas,
-  pointerWorld: Point,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
 ): void {
-  ctx.fillStyle = "rgba(8, 12, 18, 0.72)";
+  ctx.fillStyle = theme.endBackdrop;
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
   const panel = centeredRect(720, 370, -20);
-  roundRect(ctx, panel, 20, "#0f1723", "#4d6785", 2);
+  roundRect(ctx, panel, 20, theme.panelFill, theme.panelBorder, 2);
 
   ctx.textAlign = "center";
-  ctx.fillStyle = screen === "victory" ? "#7df0a0" : "#ff8f8f";
+  ctx.fillStyle = screen === "victory" ? (theme.arcade ? "#63ffb1" : "#7df0a0") : theme.arcade ? "#ff8ac7" : "#ff8f8f";
   ctx.font = "700 72px Arial";
-  ctx.fillText(screen === "victory" ? "Victory" : "Game Over", SCREEN_W * 0.5, panel.y + 110);
+  ctx.fillText(screen === "victory" ? runtime.text.runtime.endOverlay.victory : runtime.text.runtime.endOverlay.gameOver, SCREEN_W * 0.5, panel.y + 110);
 
-  ctx.fillStyle = "#d9e5f8";
+  ctx.fillStyle = theme.textSecondary;
   ctx.font = "500 28px Arial";
-  ctx.fillText("Press buttons below to continue", SCREEN_W * 0.5, panel.y + 164);
+  ctx.fillText(runtime.text.runtime.endOverlay.prompt, SCREEN_W * 0.5, panel.y + 164);
 
   const restartButton: Rect = { x: panel.x + 90, y: panel.y + 230, w: 240, h: 72 };
   const menuButton: Rect = { x: panel.x + panel.w - 330, y: panel.y + 230, w: 240, h: 72 };
 
-  const restartHovered = pointInRect(pointerWorld, restartButton);
-  const menuHovered = pointInRect(pointerWorld, menuButton);
-
-  roundRect(ctx, restartButton, 12, restartHovered ? "#3280f3" : "#236ed8", "#c5deff", 2);
-  roundRect(ctx, menuButton, 12, menuHovered ? "#536171" : "#3e4a59", "#c5deff", 2);
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "700 30px Arial";
-  ctx.fillText("Restart", restartButton.x + restartButton.w * 0.5, restartButton.y + 46);
-  ctx.fillText("Main Menu", menuButton.x + menuButton.w * 0.5, menuButton.y + 46);
+  drawActionButton(
+    ctx,
+    restartButton,
+    runtime.text.runtime.endOverlay.restart,
+    theme.buttonPrimary,
+    theme.buttonPrimaryHover,
+    theme.buttonPrimaryStroke,
+    runtime.pointerWorld,
+    theme,
+  );
+  drawActionButton(
+    ctx,
+    menuButton,
+    runtime.text.runtime.endOverlay.mainMenu,
+    theme.buttonSecondary,
+    theme.buttonSecondaryHover,
+    theme.buttonSecondaryStroke,
+    runtime.pointerWorld,
+    theme,
+  );
 
   hitAreas.restartButton = restartButton;
   hitAreas.menuButton = menuButton;
 }
 
-function drawTopMessage(ctx: CanvasRenderingContext2D, message: string): void {
+function drawTopMessage(ctx: CanvasRenderingContext2D, message: string, theme: CanvasTheme): void {
   if (!message) {
     return;
   }
 
   const box: Rect = { x: 28, y: 20, w: 860, h: 52 };
-  roundRect(ctx, box, 11, "#0f1824", "#f4f8ff", 2);
+  roundRect(ctx, box, 11, theme.messageFill, theme.messageStroke, 2);
 
-  ctx.fillStyle = "#f4f8ff";
+  if (theme.arcade) {
+    applyGlow(ctx, theme.messageStroke, 12);
+  }
+
+  ctx.fillStyle = theme.textPrimary;
   ctx.textAlign = "left";
   ctx.font = "600 24px Arial";
   ctx.fillText(message, box.x + 14, box.y + 34);
+  ctx.shadowBlur = 0;
 }
 
 function drawInfoLine(
@@ -980,15 +1205,41 @@ function drawInfoLine(
   y: number,
   valueOffset: number,
   mode: ResponsiveUIMode,
+  theme: CanvasTheme,
 ): void {
   ctx.textAlign = "left";
-  ctx.fillStyle = "#9cb5cd";
+  ctx.fillStyle = theme.textMuted;
   ctx.font = mode === "compact" ? "500 16px Arial" : "500 18px Arial";
   ctx.fillText(`${label}:`, x, y);
 
-  ctx.fillStyle = "#f1f7ff";
+  ctx.fillStyle = theme.textPrimary;
   ctx.font = mode === "compact" ? "700 19px Arial" : "700 22px Arial";
   ctx.fillText(value, x + valueOffset, y);
+}
+
+function drawActionButton(
+  ctx: CanvasRenderingContext2D,
+  rect: Rect,
+  label: string,
+  fill: string,
+  hoverFill: string,
+  stroke: string,
+  pointerWorld: Point,
+  theme: CanvasTheme,
+): void {
+  const hovered = pointInRect(pointerWorld, rect);
+  roundRect(ctx, rect, 12, hovered ? hoverFill : fill, stroke, 2);
+
+  if (theme.arcade) {
+    applyGlow(ctx, stroke, 12);
+  }
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 28px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(label, rect.x + rect.w * 0.5, rect.y + rect.h * 0.64);
+
+  ctx.shadowBlur = 0;
 }
 
 function drawGameIconBadge(
@@ -997,8 +1248,16 @@ function drawGameIconBadge(
   x: number,
   y: number,
   size: number,
+  theme: CanvasTheme,
 ): void {
-  roundRect(ctx, { x: x - 6, y: y - 6, w: size + 12, h: size + 12 }, 14, "#1f2d3f", "#98bee6", 2);
+  roundRect(
+    ctx,
+    { x: x - 6, y: y - 6, w: size + 12, h: size + 12 },
+    14,
+    theme.arcade ? "#1f0f32" : "#1f2d3f",
+    theme.arcade ? "#4df8ff" : "#98bee6",
+    2,
+  );
 
   if (icon) {
     ctx.drawImage(icon, x, y, size, size);
@@ -1010,11 +1269,11 @@ function drawGameIconBadge(
   const cy = y + size * 0.5;
 
   const grad = ctx.createLinearGradient(x, y, x + size, y + size);
-  grad.addColorStop(0, "#1b2e45");
-  grad.addColorStop(1, "#132337");
+  grad.addColorStop(0, theme.arcade ? "#29124a" : "#1b2e45");
+  grad.addColorStop(1, theme.arcade ? "#11213f" : "#132337");
   roundRect(ctx, { x, y, w: size, h: size }, 10, grad);
 
-  ctx.strokeStyle = "#d1b67b";
+  ctx.strokeStyle = theme.arcade ? "#ffe668" : "#d1b67b";
   ctx.lineWidth = Math.max(2, size * 0.08);
   ctx.lineCap = "round";
   ctx.beginPath();
@@ -1024,7 +1283,7 @@ function drawGameIconBadge(
   ctx.lineTo(x + size * 0.3, y + size * 0.74);
   ctx.stroke();
 
-  ctx.fillStyle = "#79b6ff";
+  ctx.fillStyle = theme.arcade ? "#32efff" : "#79b6ff";
   ctx.beginPath();
   ctx.arc(cx, cy, size * 0.19, 0, Math.PI * 2);
   ctx.fill();
@@ -1037,6 +1296,108 @@ function drawGameIconBadge(
   ctx.stroke();
 
   ctx.restore();
+}
+
+function formatTowerSpecialLine(runtime: RuntimeRenderState, tower: TowerName): string {
+  const stats = TOWER_TYPES[tower];
+  const base = getTowerSpecial(runtime.language, tower);
+
+  if (tower === "Stunner") {
+    const slow = stats.slowFactor ? Math.round((1 - stats.slowFactor) * 100) : 0;
+    return `${base} (${slow}% / ${stats.slowDuration?.toFixed(1) ?? "0.0"}s)`;
+  }
+  if (tower === "Bombarman" || tower === "Panzer-Tower") {
+    return `${base} (${Math.round(stats.splashRadius ?? 0)})`;
+  }
+  return base;
+}
+
+function createCanvasTheme(designMode: DesignMode): CanvasTheme {
+  const arcade = designMode === "arcade";
+  if (arcade) {
+    return {
+      arcade: true,
+      frameBackground: "#060011",
+      startGradientFrom: "#1b0138",
+      startGradientTo: "#05193b",
+      panelFill: "rgba(12, 5, 30, 0.96)",
+      panelBorder: "#31f5ff",
+      fieldFill: "#13152d",
+      gridColor: "rgba(78, 244, 255, 0.18)",
+      pathMain: "#ff4fe5",
+      pathEdge: "#ffe86a",
+      sidebarGradientFrom: "#180336",
+      sidebarGradientTo: "#081f42",
+      sidebarDivider: "#2bf7ff",
+      textPrimary: "#f9fbff",
+      textSecondary: "#c9f2ff",
+      textMuted: "#a9c5eb",
+      textAccent: "#ffe86a",
+      cardFill: "rgba(20, 8, 45, 0.92)",
+      cardStroke: "#ff4fe5",
+      tooltipFill: "rgba(8, 3, 30, 0.97)",
+      tooltipStroke: "#33f7ff",
+      endBackdrop: "rgba(8, 0, 18, 0.74)",
+      messageFill: "rgba(19, 7, 40, 0.94)",
+      messageStroke: "#53ffe8",
+      buttonPrimary: "#006f8a",
+      buttonPrimaryHover: "#0086a4",
+      buttonPrimaryStroke: "#34fdff",
+      buttonSecondary: "#3b1b58",
+      buttonSecondaryHover: "#4d2870",
+      buttonSecondaryStroke: "#ff5fe8",
+      buttonDanger: "#7e2a5a",
+      buttonDangerHover: "#9a386e",
+      buttonDangerStroke: "#ff89cb",
+    };
+  }
+
+  return {
+    arcade: false,
+    frameBackground: "#0a1016",
+    startGradientFrom: "#15263a",
+    startGradientTo: "#173145",
+    panelFill: "#0f1824",
+    panelBorder: "#4a6686",
+    fieldFill: "#21362e",
+    gridColor: "#2f4a40",
+    pathMain: "#cbb37a",
+    pathEdge: "#7f6a3f",
+    sidebarGradientFrom: "#152332",
+    sidebarGradientTo: "#192e42",
+    sidebarDivider: "#3f5b77",
+    textPrimary: "#f2f7ff",
+    textSecondary: "#dce8f7",
+    textMuted: "#9ab4ce",
+    textAccent: "#ffdd8d",
+    cardFill: "#223548",
+    cardStroke: "#4b6988",
+    tooltipFill: "rgba(11, 17, 26, 0.97)",
+    tooltipStroke: "#79a4cf",
+    endBackdrop: "rgba(8, 12, 18, 0.72)",
+    messageFill: "#0f1824",
+    messageStroke: "#f4f8ff",
+    buttonPrimary: "#236ed8",
+    buttonPrimaryHover: "#3280f3",
+    buttonPrimaryStroke: "#c5deff",
+    buttonSecondary: "#3e4a59",
+    buttonSecondaryHover: "#536171",
+    buttonSecondaryStroke: "#c5deff",
+    buttonDanger: "#7f3232",
+    buttonDangerHover: "#914242",
+    buttonDangerStroke: "#df9292",
+  };
+}
+
+function applyGlow(ctx: CanvasRenderingContext2D, color: string, blur: number): void {
+  ctx.shadowColor = color;
+  ctx.shadowBlur = blur;
+}
+
+function interpolate(template: string, params: Record<string, string | number>): string {
+  return Object.entries(params).reduce((result, [key, value]) => {
+    return result.replace(new RegExp(`\\{${key}\\}`, "g"), String(value));
+  }, template);
 }
 
 function drawHex(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number): void {
@@ -1082,6 +1443,34 @@ function roundRect(
     ctx.strokeStyle = stroke;
     ctx.stroke();
   }
+}
+
+function drawTowerGlyph(
+  ctx: CanvasRenderingContext2D,
+  center: Point,
+  radius: number,
+  color: [number, number, number],
+  label: string,
+  theme: CanvasTheme,
+): void {
+  ctx.fillStyle = theme.arcade ? "#120923" : "#111821";
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius + 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = rgb(color);
+  if (theme.arcade) {
+    applyGlow(ctx, rgb(color), 18);
+  }
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#f1f6ff";
+  ctx.font = "700 14px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(label, center.x, center.y + 5);
 }
 
 function rgb(color: [number, number, number]): string {

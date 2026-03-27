@@ -97,7 +97,7 @@ describe("sandbox wave planner", () => {
 
     const slotValidation = validateSandboxSlot(invalidSlot);
     expect(slotValidation.valid).toBe(false);
-    expect(slotValidation.errors.length).toBeGreaterThan(0);
+    expect(slotValidation.issues.length).toBeGreaterThan(0);
 
     const defaults = createDefaultSandboxConfig();
     const duplicated: SandboxConfig = {
@@ -109,6 +109,6 @@ describe("sandbox wave planner", () => {
 
     const configValidation = validateSandboxConfig(duplicated);
     expect(configValidation.valid).toBe(false);
-    expect(configValidation.errors.some((error) => error.includes("duplicate id"))).toBe(true);
+    expect(configValidation.issues.some((issue) => issue.code === "duplicate_id")).toBe(true);
   });
 });

@@ -1,4 +1,3 @@
-import { BOSS_PROFILES } from "../data/bosses";
 import type { DifficultyProfile, SpawnKey, WavePreview } from "../types";
 
 export function enemyCountForLevel(level: number, difficulty: DifficultyProfile): number {
@@ -95,20 +94,20 @@ export function buildWavePlan(level: number, difficulty: DifficultyProfile): Spa
 
 export function previewWaveInfo(level: number, difficulty: DifficultyProfile): WavePreview {
   const plan = buildWavePlan(level, difficulty);
-  let bossName = "-";
+  let bossStage: number | null = null;
 
   for (const enemyType of plan) {
     const stage = bossStageFromSpawnKey(enemyType);
     if (stage) {
-      bossName = BOSS_PROFILES[stage].name;
+      bossStage = stage;
       break;
     }
   }
 
   return {
     count: plan.length,
-    boss: bossName !== "-",
-    bossName,
+    boss: bossStage !== null,
+    bossStage,
     basic: plan.filter((enemyType) => enemyType === "basic").length,
     runner: plan.filter((enemyType) => enemyType === "runner").length,
     brute: plan.filter((enemyType) => enemyType === "brute").length,

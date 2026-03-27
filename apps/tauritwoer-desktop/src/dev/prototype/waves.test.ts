@@ -27,10 +27,10 @@ describe("wave planner", () => {
     expect(bossKeyForLevel(90)).toBe("boss_9");
   });
 
-  it("exposes preview counts and boss name", () => {
+  it("exposes preview counts and boss stage", () => {
     const preview = previewWaveInfo(20, DIFFICULTIES.schwer);
     expect(preview.boss).toBe(true);
-    expect(preview.bossName.length).toBeGreaterThan(1);
+    expect(preview.bossStage).toBe(2);
     expect(preview.count).toBe(preview.basic + preview.runner + preview.brute + preview.shield + 1);
   });
 });

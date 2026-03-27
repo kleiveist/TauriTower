@@ -24,7 +24,7 @@ function makeEnemy(overrides: Partial<EnemySnapshot> = {}): EnemySnapshot {
     splashResistance: 0,
     regenPerSec: 0,
     lifeDamage: 1,
-    bossName: "",
+    bossStage: null,
     bossShape: "circle",
     ...overrides,
   };

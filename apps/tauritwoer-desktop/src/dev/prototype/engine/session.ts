@@ -19,6 +19,7 @@ import type {
   DifficultyName,
   DifficultyProfile,
   GameAction,
+  GameMessage,
   GameMode,
   GameSession,
   GameSessionOptions,
@@ -118,8 +119,8 @@ class GameSessionImpl implements GameSession {
       spawnInterval: 0.52,
       spawnedThisWave: 0,
       totalWaveEnemies: 0,
-      currentWaveBossName: "",
-      message: "Space starts the first wave",
+      currentWaveBossStage: null,
+      message: { code: "space_to_start_wave" },
       messageTimer: 4.0,
       nextWavePreview: this.previewFor(1, mode, difficulty, sandboxConfig),
     };
@@ -188,7 +189,7 @@ class GameSessionImpl implements GameSession {
       case "returnToMenu": {
         this.state.snapshot.state = "menu";
         this.state.snapshot.selectedTowerName = null;
-        this.showMessage("", 0);
+        this.showMessage({ code: "none" }, 0);
         this.autoWaveCountdown = -1;
         break;
       }
@@ -277,18 +278,18 @@ class GameSessionImpl implements GameSession {
 
       if (snapshot.level > snapshot.maxLevel) {
         snapshot.state = "victory";
-        this.showMessage("Victory! All levels completed.", 5);
+        this.showMessage({ code: "victory_all_levels" }, 5);
         this.autoWaveCountdown = -1;
       } else {
         snapshot.money += 28 + snapshot.level * 2;
-        this.showMessage(`Wave cleared. Next level: ${snapshot.level}`, 2.2);
+        this.showMessage({ code: "wave_cleared_next_level", level: snapshot.level }, 2.2);
         this.autoWaveCountdown = 1.4;
       }
     }
 
     if (snapshot.lives <= 0) {
       snapshot.state = "game_over";
-      this.showMessage("Game Over", 5);
+      this.showMessage({ code: "game_over" }, 5);
       this.autoWaveCountdown = -1;
     }
 
@@ -315,8 +316,8 @@ class GameSessionImpl implements GameSession {
       spawnInterval: source.spawnInterval,
       spawnedThisWave: source.spawnedThisWave,
       totalWaveEnemies: source.totalWaveEnemies,
-      currentWaveBossName: source.currentWaveBossName,
-      message: source.message,
+      currentWaveBossStage: source.currentWaveBossStage,
+      message: cloneGameMessage(source.message),
       messageTimer: source.messageTimer,
       towers: source.towers.map((tower) => ({
         ...tower,
@@ -356,13 +357,13 @@ class GameSessionImpl implements GameSession {
 
     snapshot.messageTimer -= dtSeconds;
     if (snapshot.messageTimer <= 0) {
-      snapshot.message = "";
+      snapshot.message = { code: "none" };
       snapshot.messageTimer = 0;
     }
   }
 
-  private showMessage(text: string, seconds = 2.0): void {
-    this.state.snapshot.message = text;
+  private showMessage(message: GameMessage, seconds = 2.0): void {
+    this.state.snapshot.message = message;
     this.state.snapshot.messageTimer = seconds;
   }
 
@@ -390,12 +391,12 @@ class GameSessionImpl implements GameSession {
         : buildWavePlan(snapshot.level, this.state.difficulty);
     snapshot.totalWaveEnemies = snapshot.wavePlan.length;
     snapshot.spawnedThisWave = 0;
-    snapshot.currentWaveBossName = "";
+    snapshot.currentWaveBossStage = null;
 
     for (const enemyType of snapshot.wavePlan) {
       const stage = bossStageFromSpawnKey(enemyType);
       if (stage) {
-        snapshot.currentWaveBossName = BOSS_PROFILES[stage].name;
+        snapshot.currentWaveBossStage = stage;
         break;
       }
     }
@@ -403,11 +404,12 @@ class GameSessionImpl implements GameSession {
     snapshot.waveActive = true;
     snapshot.spawnInterval = Math.max(0.1, 0.46 - Math.min(snapshot.level, 90) * 0.0025);
     snapshot.spawnTimer = snapshot.wavePlan.length === 0 ? 0 : 0.08;
-    const extra = snapshot.currentWaveBossName ? ` + Boss: ${snapshot.currentWaveBossName}` : "";
-    this.showMessage(
-      `Level ${snapshot.level} started: ${snapshot.totalWaveEnemies} enemies${extra}`,
-      2.0,
-    );
+    this.showMessage({
+      code: "level_started",
+      level: snapshot.level,
+      enemies: snapshot.totalWaveEnemies,
+      bossStage: snapshot.currentWaveBossStage,
+    });
   }
 
   private spawnEnemy(enemyType: SpawnKey): void {
@@ -461,7 +463,7 @@ class GameSessionImpl implements GameSession {
         splashResistance: Math.min(0.58, 0.16 + bossStage * 0.035),
         regenPerSec: profile.regen,
         lifeDamage: profile.lifeDamage,
-        bossName: profile.name,
+        bossStage,
         bossShape: profile.shape,
       });
       return;
@@ -508,7 +510,7 @@ class GameSessionImpl implements GameSession {
       splashResistance: archetype.splashResist ?? 0,
       regenPerSec: enemyType === "shield" ? 0.18 + levelFactor * 0.02 : 0,
       lifeDamage: archetype.lifeDamage,
-      bossName: "",
+      bossStage: null,
       bossShape: "circle",
     });
   }
@@ -518,11 +520,11 @@ class GameSessionImpl implements GameSession {
     const towerStats = TOWER_TYPES[towerName];
 
     if (snapshot.level < towerStats.unlock) {
-      this.showMessage(`${towerName} unlocks at level ${towerStats.unlock}`, 1.9);
+      this.showMessage({ code: "tower_unlocks_at_level", tower: towerName, level: towerStats.unlock }, 1.9);
       return;
     }
     if (snapshot.money < towerStats.cost) {
-      this.showMessage("Not enough money", 1.6);
+      this.showMessage({ code: "not_enough_money" }, 1.6);
       return;
     }
 
@@ -539,13 +541,13 @@ class GameSessionImpl implements GameSession {
     const cost = TOWER_TYPES[towerName].cost;
 
     if (snapshot.money < cost) {
-      this.showMessage("Not enough money", 1.6);
+      this.showMessage({ code: "not_enough_money" }, 1.6);
       return;
     }
 
     const position = { x, y };
     if (!validTowerPosition(position, snapshot.towers, getMapDefinition(snapshot.mapId).pathPoints)) {
-      this.showMessage("Tower cannot be placed there", 1.6);
+      this.showMessage({ code: "tower_cannot_be_placed" }, 1.6);
       return;
     }
 
@@ -557,7 +559,7 @@ class GameSessionImpl implements GameSession {
       cooldownLeft: 0,
     });
     snapshot.selectedTowerName = null;
-    this.showMessage(`${towerName} placed`, 1.2);
+    this.showMessage({ code: "tower_placed", tower: towerName }, 1.2);
   }
 }
 
@@ -591,8 +593,8 @@ function createInitialSnapshot(
     spawnInterval: 0.52,
     spawnedThisWave: 0,
     totalWaveEnemies: 0,
-    currentWaveBossName: "",
-    message: "",
+    currentWaveBossStage: null,
+    message: { code: "none" },
     messageTimer: 0,
     towers: [],
     enemies: [],
@@ -606,4 +608,8 @@ function createInitialSnapshot(
 
 function assertUnreachable(value: never): never {
   throw new Error(`Unhandled action: ${JSON.stringify(value)}`);
+}
+
+function cloneGameMessage(message: GameMessage): GameMessage {
+  return { ...message };
 }
