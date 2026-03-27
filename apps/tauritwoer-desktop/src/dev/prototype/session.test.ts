@@ -22,6 +22,30 @@ function tickUntil(
 }
 
 describe("session flow", () => {
+  it("clears selected tower after successful placement", () => {
+    const session = createGameSession({ seed: 41 });
+    session.applyAction({ type: "chooseDifficulty", difficulty: "leicht" });
+    session.applyAction({ type: "selectTower", tower: "Pistolman" });
+
+    session.applyAction({ type: "placeTower", position: { x: 120, y: 260 } });
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.towers).toHaveLength(1);
+    expect(snapshot.selectedTowerName).toBeNull();
+  });
+
+  it("keeps selected tower after failed placement", () => {
+    const session = createGameSession({ seed: 42 });
+    session.applyAction({ type: "chooseDifficulty", difficulty: "leicht" });
+    session.applyAction({ type: "selectTower", tower: "Pistolman" });
+
+    session.applyAction({ type: "placeTower", position: { x: 120, y: 180 } });
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.towers).toHaveLength(0);
+    expect(snapshot.selectedTowerName).toBe("Pistolman");
+  });
+
   it("progresses to the next level and grants wave completion bonus", () => {
     const session = createGameSession({ seed: 42 });
     session.applyAction({ type: "chooseDifficulty", difficulty: "leicht" });

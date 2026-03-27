@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import gameIconUrl from "../../../assets/game-icon.png";
 import { createPrototypeController } from "./controller";
 
 export function PrototypeCanvas(): JSX.Element {
@@ -10,7 +11,11 @@ export function PrototypeCanvas(): JSX.Element {
       return;
     }
 
-    const controller = createPrototypeController({ canvas, seed: 20260327 });
+    const controller = createPrototypeController({
+      canvas,
+      seed: 20260327,
+      iconSrc: gameIconUrl,
+    });
 
     const resizeCanvas = (): void => {
       const rect = canvas.getBoundingClientRect();

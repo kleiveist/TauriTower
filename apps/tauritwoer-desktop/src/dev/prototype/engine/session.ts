@@ -482,6 +482,7 @@ class GameSessionImpl implements GameSession {
       towerType: towerName,
       cooldownLeft: 0,
     });
+    snapshot.selectedTowerName = null;
     this.showMessage(`${towerName} placed`, 1.2);
   }
 }

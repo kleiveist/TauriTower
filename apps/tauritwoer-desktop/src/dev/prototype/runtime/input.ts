@@ -14,6 +14,10 @@ export interface TaggedRectWithValue<T extends string, V> {
   value: V;
 }
 
+export type KeyboardShortcutLike = Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey">;
+
+export const SPEED_MULTIPLIER_STEPS = [0.5, 1.0, 1.5, 2.0, 3.0] as const;
+
 export function findTaggedRect<T extends string>(
   point: Point,
   entries: TaggedRect<T>[],
@@ -46,4 +50,57 @@ export function difficultyLabel(difficulty: DifficultyName): string {
     return "Unmoeglich";
   }
   return `${difficulty.charAt(0).toUpperCase()}${difficulty.slice(1)}`;
+}
+
+export function increaseSpeedMultiplier(current: number): number {
+  const index = nearestStepIndex(current);
+  const nextIndex = Math.min(index + 1, SPEED_MULTIPLIER_STEPS.length - 1);
+  return SPEED_MULTIPLIER_STEPS[nextIndex] ?? SPEED_MULTIPLIER_STEPS[0];
+}
+
+export function decreaseSpeedMultiplier(current: number): number {
+  const index = nearestStepIndex(current);
+  const nextIndex = Math.max(0, index - 1);
+  return SPEED_MULTIPLIER_STEPS[nextIndex] ?? SPEED_MULTIPLIER_STEPS[0];
+}
+
+export function isSpeedIncreaseHotkey(event: KeyboardShortcutLike): boolean {
+  if (!event.ctrlKey && !event.metaKey) {
+    return false;
+  }
+
+  return (
+    event.code === "NumpadAdd" ||
+    event.code === "Equal" ||
+    event.key === "+" ||
+    event.key === "="
+  );
+}
+
+export function isSpeedDecreaseHotkey(event: KeyboardShortcutLike): boolean {
+  if (!event.ctrlKey && !event.metaKey) {
+    return false;
+  }
+
+  return (
+    event.code === "NumpadSubtract" ||
+    event.code === "Minus" ||
+    event.key === "-" ||
+    event.key === "_"
+  );
+}
+
+function nearestStepIndex(value: number): number {
+  let bestIndex = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (let i = 0; i < SPEED_MULTIPLIER_STEPS.length; i += 1) {
+    const distance = Math.abs(SPEED_MULTIPLIER_STEPS[i] - value);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestIndex = i;
+    }
+  }
+
+  return bestIndex;
 }

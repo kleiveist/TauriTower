@@ -1,7 +1,7 @@
 import { PATH_POINTS, FIELD_W, GRID_SIZE, PATH_WIDTH, SCREEN_H, SCREEN_W, SIDEBAR_W } from "../data/constants";
 import { DIFFICULTIES, DIFFICULTY_ORDER } from "../data/difficulties";
 import { TOWER_DESCRIPTIONS, TOWER_ORDER, TOWER_TYPES } from "../data/towers";
-import type { DifficultyName, EnemySnapshot, GameSnapshot, TowerName } from "../types";
+import type { DifficultyName, EnemySnapshot, GameSnapshot, Point, TowerName } from "../types";
 import { difficultyLabel } from "./input";
 import { centeredRect, fieldRect, sidebarRect, towerCardRect } from "./layout";
 import type { Rect, Viewport } from "./layout";
@@ -18,6 +18,20 @@ export interface TowerHit {
   rect: Rect;
 }
 
+export interface TowerPreviewRenderState {
+  tower: TowerName;
+  position: Point;
+  range: number;
+  validPlacement: boolean;
+}
+
+export interface RuntimeRenderState {
+  pointerWorld: Point;
+  speedMultiplier: number;
+  towerPreview: TowerPreviewRenderState | null;
+  gameIcon: CanvasImageSource | null;
+}
+
 export interface RenderHitAreas {
   startButton?: Rect;
   difficultyButtons: DifficultyHit[];
@@ -32,6 +46,7 @@ export function renderPrototypeFrame(
   viewport: Viewport,
   screen: PrototypeScreen,
   snapshot: GameSnapshot,
+  runtime: RuntimeRenderState,
 ): RenderHitAreas {
   const hitAreas: RenderHitAreas = {
     difficultyButtons: [],
@@ -49,7 +64,7 @@ export function renderPrototypeFrame(
   ctx.scale(viewport.scale, viewport.scale);
 
   if (screen === "start") {
-    drawStartScreen(ctx, hitAreas);
+    drawStartScreen(ctx, hitAreas, runtime.gameIcon);
     ctx.restore();
     return hitAreas;
   }
@@ -60,7 +75,7 @@ export function renderPrototypeFrame(
     return hitAreas;
   }
 
-  drawGameScene(ctx, snapshot, hitAreas);
+  drawGameScene(ctx, snapshot, hitAreas, runtime);
 
   if (screen === "game_over" || screen === "victory") {
     drawEndOverlay(ctx, screen, hitAreas);
@@ -70,7 +85,11 @@ export function renderPrototypeFrame(
   return hitAreas;
 }
 
-function drawStartScreen(ctx: CanvasRenderingContext2D, hitAreas: RenderHitAreas): void {
+function drawStartScreen(
+  ctx: CanvasRenderingContext2D,
+  hitAreas: RenderHitAreas,
+  gameIcon: CanvasImageSource | null,
+): void {
   const gradient = ctx.createLinearGradient(0, 0, SCREEN_W, SCREEN_H);
   gradient.addColorStop(0, "#15202f");
   gradient.addColorStop(1, "#1d2f3f");
@@ -80,10 +99,12 @@ function drawStartScreen(ctx: CanvasRenderingContext2D, hitAreas: RenderHitAreas
   const panel = centeredRect(920, 520, -40);
   roundRect(ctx, panel, 22, "#101722", "#4d6783", 2);
 
+  drawGameIconBadge(ctx, gameIcon, panel.x + 34, panel.y + 34, 122);
+
   ctx.fillStyle = "#f3f7ff";
   ctx.font = "700 84px Arial";
   ctx.textAlign = "center";
-  ctx.fillText("TauriTwoer Defense", SCREEN_W * 0.5, panel.y + 138);
+  ctx.fillText("TauriTwoer Defense", SCREEN_W * 0.5 + 20, panel.y + 138);
 
   ctx.font = "400 32px Arial";
   ctx.fillStyle = "#b9c8dc";
@@ -155,11 +176,13 @@ function drawGameScene(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
   hitAreas: RenderHitAreas,
+  runtime: RuntimeRenderState,
 ): void {
   drawField(ctx);
   drawPath(ctx);
+  drawTowerPreview(ctx, runtime.towerPreview);
   drawEntities(ctx, snapshot);
-  drawSidebar(ctx, snapshot, hitAreas);
+  drawSidebar(ctx, snapshot, hitAreas, runtime.speedMultiplier, runtime.gameIcon);
   drawTopMessage(ctx, snapshot.message);
 }
 
@@ -207,24 +230,52 @@ function drawPath(ctx: CanvasRenderingContext2D): void {
   ctx.stroke();
 }
 
+function drawTowerPreview(
+  ctx: CanvasRenderingContext2D,
+  preview: TowerPreviewRenderState | null,
+): void {
+  if (!preview) {
+    return;
+  }
+
+  const rangeFill = preview.validPlacement ? "rgba(92, 214, 132, 0.20)" : "rgba(228, 102, 102, 0.20)";
+  const rangeStroke = preview.validPlacement ? "#99f0b8" : "#ffb1b1";
+
+  ctx.save();
+  ctx.fillStyle = rangeFill;
+  ctx.beginPath();
+  ctx.arc(preview.position.x, preview.position.y, preview.range, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = rangeStroke;
+  ctx.lineWidth = 3;
+  ctx.setLineDash([12, 9]);
+  ctx.beginPath();
+  ctx.arc(preview.position.x, preview.position.y, preview.range, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const stats = TOWER_TYPES[preview.tower];
+  drawTowerBody(ctx, preview.position, stats.color, 0.7);
+
+  if (!preview.validPlacement) {
+    ctx.strokeStyle = "#ffb1b1";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(preview.position.x - 16, preview.position.y - 16);
+    ctx.lineTo(preview.position.x + 16, preview.position.y + 16);
+    ctx.moveTo(preview.position.x + 16, preview.position.y - 16);
+    ctx.lineTo(preview.position.x - 16, preview.position.y + 16);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 function drawEntities(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot): void {
   for (const tower of snapshot.towers) {
     const stats = TOWER_TYPES[tower.towerType];
-    ctx.fillStyle = "#151b22";
-    ctx.beginPath();
-    ctx.arc(tower.pos.x, tower.pos.y, 28, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = rgb(stats.color);
-    ctx.beginPath();
-    ctx.arc(tower.pos.x, tower.pos.y, 23, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = "#f4f7ff";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(tower.pos.x, tower.pos.y, 9, 0, Math.PI * 2);
-    ctx.stroke();
+    drawTowerBody(ctx, tower.pos, stats.color, 1.0);
   }
 
   for (const enemy of snapshot.enemies) {
@@ -237,6 +288,34 @@ function drawEntities(ctx: CanvasRenderingContext2D, snapshot: GameSnapshot): vo
     ctx.arc(bullet.pos.x, bullet.pos.y, bullet.radius, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+function drawTowerBody(
+  ctx: CanvasRenderingContext2D,
+  pos: Point,
+  color: [number, number, number],
+  alpha: number,
+): void {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  ctx.fillStyle = "#151b22";
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 28, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = rgb(color);
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 23, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "#f4f7ff";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 9, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 function drawEnemy(ctx: CanvasRenderingContext2D, enemy: EnemySnapshot): void {
@@ -395,6 +474,8 @@ function drawSidebar(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
   hitAreas: RenderHitAreas,
+  speedMultiplier: number,
+  gameIcon: CanvasImageSource | null,
 ): void {
   const sidebar = sidebarRect();
   roundRect(ctx, sidebar, 0, "#18232f");
@@ -406,20 +487,23 @@ function drawSidebar(
   ctx.lineTo(FIELD_W, SCREEN_H);
   ctx.stroke();
 
+  drawGameIconBadge(ctx, gameIcon, FIELD_W + SIDEBAR_W - 98, 18, 66);
+
   ctx.textAlign = "left";
   ctx.fillStyle = "#f2f7ff";
   ctx.font = "700 46px Arial";
   ctx.fillText("Tower Defense", FIELD_W + 28, 58);
 
-  const infoRect: Rect = { x: FIELD_W + 24, y: 82, w: SIDEBAR_W - 48, h: 196 };
+  const infoRect: Rect = { x: FIELD_W + 24, y: 82, w: SIDEBAR_W - 48, h: 210 };
   roundRect(ctx, infoRect, 14, "#233244", "#4b6887", 2);
-  drawInfoLine(ctx, "Difficulty", difficultyLabel(snapshot.difficultyName), infoRect.x + 14, infoRect.y + 40);
-  drawInfoLine(ctx, "Level", `${Math.min(snapshot.level, snapshot.maxLevel)}/${snapshot.maxLevel}`, infoRect.x + 14, infoRect.y + 72);
-  drawInfoLine(ctx, "Lives", `${snapshot.lives}`, infoRect.x + 14, infoRect.y + 104);
-  drawInfoLine(ctx, "Money", `${snapshot.money}`, infoRect.x + 14, infoRect.y + 136);
-  drawInfoLine(ctx, "Selected", snapshot.selectedTowerName ?? "None", infoRect.x + 14, infoRect.y + 168);
+  drawInfoLine(ctx, "Difficulty", difficultyLabel(snapshot.difficultyName), infoRect.x + 14, infoRect.y + 36);
+  drawInfoLine(ctx, "Level", `${Math.min(snapshot.level, snapshot.maxLevel)}/${snapshot.maxLevel}`, infoRect.x + 14, infoRect.y + 66);
+  drawInfoLine(ctx, "Lives", `${snapshot.lives}`, infoRect.x + 14, infoRect.y + 96);
+  drawInfoLine(ctx, "Money", `${snapshot.money}`, infoRect.x + 14, infoRect.y + 126);
+  drawInfoLine(ctx, "Selected", snapshot.selectedTowerName ?? "None", infoRect.x + 14, infoRect.y + 156);
+  drawInfoLine(ctx, "Speed", `${speedMultiplier.toFixed(1)}x`, infoRect.x + 14, infoRect.y + 186);
 
-  const waveRect: Rect = { x: FIELD_W + 24, y: 288, w: SIDEBAR_W - 48, h: 102 };
+  const waveRect: Rect = { x: FIELD_W + 24, y: 302, w: SIDEBAR_W - 48, h: 98 };
   roundRect(ctx, waveRect, 12, "#233244", "#4b6887", 2);
   ctx.fillStyle = "#dce8f7";
   ctx.font = "600 21px Arial";
@@ -468,10 +552,11 @@ function drawSidebar(
   }
 
   ctx.fillStyle = "#94aec9";
-  ctx.font = "500 16px Arial";
+  ctx.font = "500 15px Arial";
   ctx.textAlign = "left";
   ctx.fillText("Controls: [1-5] Tower  [Space] Wave  [R] Restart", FIELD_W + 30, SCREEN_H - 148);
-  ctx.fillText("Right click or [Esc] clears selection, [M] opens menu", FIELD_W + 30, SCREEN_H - 126);
+  ctx.fillText("[Ctrl +] Faster  [Ctrl -] Slower  [Esc/Right Click] Clear  [M] Menu", FIELD_W + 30, SCREEN_H - 126);
+
   const startWaveRect: Rect = {
     x: FIELD_W + 30,
     y: SCREEN_H - 106,
@@ -566,6 +651,54 @@ function drawInfoLine(
   ctx.fillText(value, x + 144, y);
 }
 
+function drawGameIconBadge(
+  ctx: CanvasRenderingContext2D,
+  icon: CanvasImageSource | null,
+  x: number,
+  y: number,
+  size: number,
+): void {
+  roundRect(ctx, { x: x - 6, y: y - 6, w: size + 12, h: size + 12 }, 14, "#1f2d3f", "#98bee6", 2);
+
+  if (icon) {
+    ctx.drawImage(icon, x, y, size, size);
+    return;
+  }
+
+  ctx.save();
+  const cx = x + size * 0.5;
+  const cy = y + size * 0.5;
+
+  const grad = ctx.createLinearGradient(x, y, x + size, y + size);
+  grad.addColorStop(0, "#1b2e45");
+  grad.addColorStop(1, "#132337");
+  roundRect(ctx, { x, y, w: size, h: size }, 10, grad);
+
+  ctx.strokeStyle = "#d1b67b";
+  ctx.lineWidth = Math.max(2, size * 0.08);
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x + size * 0.16, y + size * 0.25);
+  ctx.lineTo(x + size * 0.7, y + size * 0.25);
+  ctx.lineTo(x + size * 0.7, y + size * 0.74);
+  ctx.lineTo(x + size * 0.3, y + size * 0.74);
+  ctx.stroke();
+
+  ctx.fillStyle = "#79b6ff";
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.19, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "#f2f6ff";
+  ctx.lineWidth = Math.max(2, size * 0.05);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + size * 0.2, cy - size * 0.2);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function drawHex(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number): void {
   for (let i = 0; i < 6; i += 1) {
     const angle = -Math.PI / 2 + i * (Math.PI / 3);
@@ -585,7 +718,7 @@ function roundRect(
   ctx: CanvasRenderingContext2D,
   rect: Rect,
   radius: number,
-  fill: string,
+  fill: string | CanvasGradient,
   stroke?: string,
   strokeWidth = 1,
 ): void {

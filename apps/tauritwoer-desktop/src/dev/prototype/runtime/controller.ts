@@ -1,11 +1,20 @@
 import { FIELD_W, FPS } from "../data/constants";
 import { DIFFICULTY_ORDER } from "../data/difficulties";
+import { TOWER_TYPES } from "../data/towers";
+import { validTowerPosition } from "../domain/placement";
 import { createGameSession } from "../index";
 import type { DifficultyName, GameAction, GameSnapshot, Point } from "../types";
-import { findTaggedRectWithValue, towerFromDigitKey } from "./input";
+import {
+  decreaseSpeedMultiplier,
+  findTaggedRectWithValue,
+  increaseSpeedMultiplier,
+  isSpeedDecreaseHotkey,
+  isSpeedIncreaseHotkey,
+  towerFromDigitKey,
+} from "./input";
 import { createViewport, pointInRect, toWorldPosition } from "./layout";
 import { renderPrototypeFrame } from "./renderer";
-import type { PrototypeScreen, RenderHitAreas } from "./renderer";
+import type { PrototypeScreen, RenderHitAreas, TowerPreviewRenderState } from "./renderer";
 
 const FIXED_STEP = 1 / FPS;
 const MAX_FRAME_DELTA = 0.12;
@@ -14,6 +23,7 @@ const MAX_STEPS_PER_FRAME = 8;
 export interface PrototypeControllerOptions {
   canvas: HTMLCanvasElement;
   seed?: number;
+  iconSrc?: string;
 }
 
 export interface PrototypeController {
@@ -46,6 +56,10 @@ class PrototypeControllerImpl implements PrototypeController {
 
   private pointerWorld: Point = { x: -1000, y: -1000 };
 
+  private speedMultiplier = 1.0;
+
+  private gameIcon: HTMLImageElement | null = null;
+
   private animationFrame = 0;
 
   private running = false;
@@ -64,6 +78,16 @@ class PrototypeControllerImpl implements PrototypeController {
       throw new Error("Failed to get 2D canvas context");
     }
     this.ctx = context;
+
+    if (options.iconSrc) {
+      const image = new Image();
+      image.decoding = "async";
+      image.onload = () => {
+        this.render();
+      };
+      image.src = options.iconSrc;
+      this.gameIcon = image;
+    }
   }
 
   start(): void {
@@ -126,6 +150,12 @@ class PrototypeControllerImpl implements PrototypeController {
       this.viewport,
       this.getRenderScreen(),
       this.snapshot,
+      {
+        pointerWorld: this.pointerWorld,
+        speedMultiplier: this.speedMultiplier,
+        towerPreview: this.getTowerPreview(),
+        gameIcon: this.gameIcon && this.gameIcon.complete ? this.gameIcon : null,
+      },
     );
 
     this.updateCursor(this.pointerWorld);
@@ -138,7 +168,39 @@ class PrototypeControllerImpl implements PrototypeController {
 
   private chooseDifficulty(difficulty: DifficultyName): void {
     this.applyAction({ type: "chooseDifficulty", difficulty });
+    this.speedMultiplier = 1.0;
     this.uiScreen = "playing";
+  }
+
+  private resetSpeedMultiplier(): void {
+    this.speedMultiplier = 1.0;
+  }
+
+  private getTowerPreview(): TowerPreviewRenderState | null {
+    const screen = this.getRenderScreen();
+    if (screen !== "playing" || this.snapshot.state !== "playing") {
+      return null;
+    }
+
+    const towerName = this.snapshot.selectedTowerName;
+    if (!towerName) {
+      return null;
+    }
+
+    const stats = TOWER_TYPES[towerName];
+    const validPlacement =
+      this.snapshot.money >= stats.cost &&
+      validTowerPosition(this.pointerWorld, this.snapshot.towers);
+
+    return {
+      tower: towerName,
+      position: {
+        x: this.pointerWorld.x,
+        y: this.pointerWorld.y,
+      },
+      range: stats.range,
+      validPlacement,
+    };
   }
 
   private getRenderScreen(): PrototypeScreen {
@@ -224,7 +286,7 @@ class PrototypeControllerImpl implements PrototypeController {
 
     let steps = 0;
     while (this.accumulator >= FIXED_STEP && steps < MAX_STEPS_PER_FRAME) {
-      this.simulateStep(FIXED_STEP);
+      this.simulateStep(FIXED_STEP * this.speedMultiplier);
       this.accumulator -= FIXED_STEP;
       steps += 1;
     }
@@ -239,6 +301,7 @@ class PrototypeControllerImpl implements PrototypeController {
   private onPointerMove = (event: PointerEvent): void => {
     this.pointerWorld = this.worldFromPointer(event);
     this.updateCursor(this.pointerWorld);
+    this.render();
   };
 
   private onPointerDown = (event: PointerEvent): void => {
@@ -279,9 +342,11 @@ class PrototypeControllerImpl implements PrototypeController {
     if (screen === "game_over" || screen === "victory") {
       if (this.hitAreas.restartButton && pointInRect(world, this.hitAreas.restartButton)) {
         this.applyAction({ type: "restart" });
+        this.resetSpeedMultiplier();
         this.uiScreen = "playing";
       } else if (this.hitAreas.menuButton && pointInRect(world, this.hitAreas.menuButton)) {
         this.applyAction({ type: "returnToMenu" });
+        this.resetSpeedMultiplier();
         this.uiScreen = "start";
       }
 
@@ -361,6 +426,7 @@ class PrototypeControllerImpl implements PrototypeController {
       if (event.code === "Enter" || event.code === "KeyR") {
         event.preventDefault();
         this.applyAction({ type: "restart" });
+        this.resetSpeedMultiplier();
         this.uiScreen = "playing";
         this.render();
         return;
@@ -369,9 +435,24 @@ class PrototypeControllerImpl implements PrototypeController {
       if (event.code === "Escape" || event.code === "KeyM") {
         event.preventDefault();
         this.applyAction({ type: "returnToMenu" });
+        this.resetSpeedMultiplier();
         this.uiScreen = "start";
         this.render();
       }
+      return;
+    }
+
+    if (isSpeedIncreaseHotkey(event)) {
+      event.preventDefault();
+      this.speedMultiplier = increaseSpeedMultiplier(this.speedMultiplier);
+      this.render();
+      return;
+    }
+
+    if (isSpeedDecreaseHotkey(event)) {
+      event.preventDefault();
+      this.speedMultiplier = decreaseSpeedMultiplier(this.speedMultiplier);
+      this.render();
       return;
     }
 
@@ -384,12 +465,14 @@ class PrototypeControllerImpl implements PrototypeController {
 
     if (event.code === "KeyR") {
       this.applyAction({ type: "restart" });
+      this.resetSpeedMultiplier();
       this.render();
       return;
     }
 
     if (event.code === "KeyM") {
       this.applyAction({ type: "returnToMenu" });
+      this.resetSpeedMultiplier();
       this.uiScreen = "start";
       this.render();
       return;

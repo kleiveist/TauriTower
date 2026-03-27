@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#132033"/>
+      <stop offset="55%" stop-color="#1b2f47"/>
+      <stop offset="100%" stop-color="#0f1a2b"/>
+    </linearGradient>
+    <linearGradient id="path" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#e3c58f"/>
+      <stop offset="100%" stop-color="#b9955e"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#7fc0ff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#7fc0ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="turret" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7bc0ff"/>
+      <stop offset="100%" stop-color="#3e7ec6"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="380" fill="url(#glow)"/>
+
+  <path d="M180 250 H620 V420 H830 V760 H390" fill="none" stroke="url(#path)" stroke-width="110" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M180 250 H620 V420 H830 V760 H390" fill="none" stroke="#8a6e43" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+
+  <circle cx="512" cy="512" r="170" fill="#162538" stroke="#dcecff" stroke-width="22"/>
+  <circle cx="512" cy="512" r="128" fill="url(#turret)"/>
+  <circle cx="512" cy="512" r="54" fill="#f2f8ff"/>
+
+  <rect x="518" y="428" width="235" height="46" rx="22" fill="#f2f8ff" transform="rotate(-33 518 428)"/>
+  <circle cx="716" cy="295" r="30" fill="#f2f8ff"/>
+
+  <circle cx="512" cy="512" r="22" fill="#0e1726"/>
+  <circle cx="512" cy="512" r="13" fill="#6fa7dd"/>
+
+  <path d="M512 176 A336 336 0 0 1 848 512" fill="none" stroke="#9fd4ff" stroke-opacity="0.5" stroke-width="18" stroke-linecap="round"/>
+</svg>
