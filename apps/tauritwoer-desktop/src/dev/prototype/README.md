@@ -87,3 +87,12 @@ Maps are selected before game start and drive:
 - Sandbox config persistence is runtime-memory only (no file save/load yet).
 - No preset/import/export pipeline yet.
 - Accessibility and advanced editor affordances can be layered later without changing core engine interfaces.
+
+## Overlay Settings
+
+Each overlay card has a top-right settings button with a popover for:
+
+- Language: `DE` / `EN`
+- Design mode: `Standard` / `Arcade`
+
+The selected values are persisted in `localStorage` and restored on next app launch.

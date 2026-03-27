@@ -23,17 +23,20 @@ import type {
   SandboxSlot,
 } from "../types";
 import { createPrototypeController } from "./controller";
+import {
+  DEFAULT_DESIGN_MODE,
+  DEFAULT_UI_LANGUAGE,
+  UI_PREFERENCE_KEYS,
+  type DesignMode,
+  getTranslations,
+  isDesignMode,
+  isUiLanguage,
+  type PrototypeTranslations,
+  type UiLanguage,
+} from "./i18n";
 import { getResponsiveMode } from "./ui";
 
 type MenuStage = "start" | "mode" | "difficulty" | "map" | "sandbox";
-
-const ENEMY_LABELS: Record<SandboxEnemyType, string> = {
-  basic: "Basic",
-  runner: "Runner",
-  brute: "Brute",
-  shield: "Shield",
-  boss: "Boss",
-};
 
 const ENEMY_GLYPHS: Record<SandboxEnemyType, string> = {
   basic: "●",
@@ -42,13 +45,6 @@ const ENEMY_GLYPHS: Record<SandboxEnemyType, string> = {
   shield: "⬢",
   boss: "★",
 };
-
-function difficultyLabel(difficulty: DifficultyName): string {
-  if (difficulty === "unmoeglich") {
-    return "Unmoeglich";
-  }
-  return difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
-}
 
 function createNextSlotId(slots: SandboxSlot[]): string {
   let max = 0;
@@ -66,28 +62,59 @@ function createNextSlotId(slots: SandboxSlot[]): string {
   return createSandboxSlotId(max + 1);
 }
 
-function slotPreviewText(slot: SandboxSlot): string {
+function slotPreviewText(slot: SandboxSlot, text: PrototypeTranslations): string {
   const first = sandboxSlotSpawnCount(slot, slot.startRound);
   const round10 = sandboxSlotSpawnCount(slot, Math.max(10, slot.startRound));
   const round20 = sandboxSlotSpawnCount(slot, Math.max(20, slot.startRound));
 
   const typeText =
     slot.enemyType === "boss"
-      ? `Boss ${slot.bossStage} (${BOSS_PROFILES[slot.bossStage]?.name ?? "Unknown"})`
-      : ENEMY_LABELS[slot.enemyType];
+      ? `${text.enemyLabels.boss} ${slot.bossStage} (${BOSS_PROFILES[slot.bossStage]?.name ?? text.preview.bossUnknown})`
+      : text.enemyLabels[slot.enemyType];
 
-  return `From R${slot.startRound}: ${first}, R10: ${round10}, R20: ${round20} | x${slot.multiplier.toFixed(2)} +${slot.addEvery10Rounds}/10r ${typeText}`;
+  return `R${slot.startRound}: ${first}, R10: ${round10}, R20: ${round20} | x${slot.multiplier.toFixed(2)} +${slot.addEvery10Rounds}/10r ${typeText}`;
+}
+
+function readStoredLanguage(): UiLanguage {
+  if (typeof window === "undefined") {
+    return DEFAULT_UI_LANGUAGE;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(UI_PREFERENCE_KEYS.language);
+    return isUiLanguage(stored) ? stored : DEFAULT_UI_LANGUAGE;
+  } catch {
+    return DEFAULT_UI_LANGUAGE;
+  }
+}
+
+function readStoredDesignMode(): DesignMode {
+  if (typeof window === "undefined") {
+    return DEFAULT_DESIGN_MODE;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(UI_PREFERENCE_KEYS.designMode);
+    return isDesignMode(stored) ? stored : DEFAULT_DESIGN_MODE;
+  } catch {
+    return DEFAULT_DESIGN_MODE;
+  }
 }
 
 export function PrototypeCanvas(): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const controllerRef = useRef<ReturnType<typeof createPrototypeController> | null>(null);
+  const settingsContainerRef = useRef<HTMLDivElement | null>(null);
 
   const [viewportWidth, setViewportWidth] = useState<number>(() =>
     typeof window === "undefined" ? 1600 : window.innerWidth,
   );
   const [isPlaying, setIsPlaying] = useState(false);
   const [menuStage, setMenuStage] = useState<MenuStage>("start");
+
+  const [uiLanguage, setUiLanguage] = useState<UiLanguage>(readStoredLanguage);
+  const [designMode, setDesignMode] = useState<DesignMode>(readStoredDesignMode);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [selectedMode, setSelectedMode] = useState<GameMode>("classic");
   const [selectedDifficulty, setSelectedDifficulty] = useState<DifficultyName>("leicht");
@@ -97,6 +124,7 @@ export function PrototypeCanvas(): JSX.Element {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
 
   const isCompact = getResponsiveMode(viewportWidth) === "compact";
+  const text = useMemo(() => getTranslations(uiLanguage), [uiLanguage]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -160,6 +188,56 @@ export function PrototypeCanvas(): JSX.Element {
 
     setSelectedSlotId(sandboxConfig.slots[0].id);
   }, [sandboxConfig, selectedSlotId]);
+
+  useEffect(() => {
+    setSettingsOpen(false);
+  }, [isPlaying, menuStage]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(UI_PREFERENCE_KEYS.language, uiLanguage);
+    } catch {
+      // Ignore storage write errors in restricted environments.
+    }
+  }, [uiLanguage]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(UI_PREFERENCE_KEYS.designMode, designMode);
+    } catch {
+      // Ignore storage write errors in restricted environments.
+    }
+  }, [designMode]);
+
+  useEffect(() => {
+    if (!settingsOpen) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (settingsContainerRef.current?.contains(target)) {
+        return;
+      }
+      setSettingsOpen(false);
+    };
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        setSettingsOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [settingsOpen]);
 
   const slotValidationById = useMemo(() => {
     const result = new Map<string, ReturnType<typeof validateSandboxSlot>>();
@@ -239,101 +317,168 @@ export function PrototypeCanvas(): JSX.Element {
     setSelectedSlotId(remaining[0]?.id ?? null);
   };
 
-  const renderStart = (): JSX.Element => (
-    <div className="prototype-overlay-card">
-      <h1>TauriTwoer Defense</h1>
-      <p>Hybrid Canvas + React workflow with classic waves and editable sandbox agent-box slots.</p>
-      <button className="prototype-btn prototype-btn--primary" onClick={() => setMenuStage("mode")}>Start</button>
-    </div>
-  );
+  const renderSettings = (): JSX.Element => (
+    <div className="prototype-card-settings" ref={settingsContainerRef}>
+      <button
+        className={`prototype-settings-btn ${settingsOpen ? "is-open" : ""}`}
+        type="button"
+        aria-label={text.settings.title}
+        title={text.settings.title}
+        aria-expanded={settingsOpen}
+        onClick={() => setSettingsOpen((open) => !open)}
+      >
+        ⚙
+      </button>
+      {settingsOpen ? (
+        <div className="prototype-settings-popover" role="dialog" aria-label={text.settings.title}>
+          <div className="prototype-settings-title">{text.settings.title}</div>
 
-  const renderModeSelect = (): JSX.Element => (
-    <div className="prototype-overlay-card">
-      <h2>Select Mode</h2>
-      <div className="prototype-choice-grid">
-        <button
-          className={`prototype-choice ${selectedMode === "classic" ? "is-selected" : ""}`}
-          onClick={() => setSelectedMode("classic")}
-        >
-          <strong>Classic</strong>
-          <span>Original wave planner with automatic boss levels every 10 rounds.</span>
-        </button>
-        <button
-          className={`prototype-choice ${selectedMode === "sandbox" ? "is-selected" : ""}`}
-          onClick={() => setSelectedMode("sandbox")}
-        >
-          <strong>Sandbox / Agent Box</strong>
-          <span>Editable slots define exact spawns, scaling and optional explicit boss entries.</span>
-        </button>
-      </div>
-      <div className="prototype-overlay-actions">
-        <button className="prototype-btn" onClick={() => setMenuStage("start")}>Back</button>
-        <button className="prototype-btn prototype-btn--primary" onClick={() => setMenuStage("difficulty")}>Continue</button>
-      </div>
-    </div>
-  );
+          <div className="prototype-settings-section">
+            <div className="prototype-settings-label">{text.settings.language}</div>
+            <div className="prototype-settings-options">
+              {(Object.keys(text.settings.languageOptionLabels) as UiLanguage[]).map((language) => (
+                <button
+                  key={language}
+                  className={`prototype-settings-option ${uiLanguage === language ? "is-selected" : ""}`}
+                  type="button"
+                  onClick={() => setUiLanguage(language)}
+                >
+                  {text.settings.languageOptionLabels[language]}
+                </button>
+              ))}
+            </div>
+          </div>
 
-  const renderDifficulty = (): JSX.Element => (
-    <div className="prototype-overlay-card">
-      <h2>Select Difficulty</h2>
-      <div className="prototype-list-grid">
-        {DIFFICULTY_ORDER.map((difficulty) => (
-          <button
-            key={difficulty}
-            className={`prototype-list-item ${selectedDifficulty === difficulty ? "is-selected" : ""}`}
-            onClick={() => setSelectedDifficulty(difficulty)}
-          >
-            <strong>{difficultyLabel(difficulty)}</strong>
-            <span>Spawn multiplier x{DIFFICULTIES[difficulty].countMult.toFixed(1)}</span>
+          <div className="prototype-settings-section">
+            <div className="prototype-settings-label">{text.settings.design}</div>
+            <div className="prototype-settings-options">
+              {(Object.keys(text.settings.designOptionLabels) as DesignMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  className={`prototype-settings-option ${designMode === mode ? "is-selected" : ""}`}
+                  type="button"
+                  onClick={() => setDesignMode(mode)}
+                >
+                  {text.settings.designOptionLabels[mode]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button className="prototype-btn prototype-btn--settings-close" type="button" onClick={() => setSettingsOpen(false)}>
+            {text.actions.close}
           </button>
-        ))}
-      </div>
-      <div className="prototype-overlay-actions">
-        <button className="prototype-btn" onClick={() => setMenuStage("mode")}>Back</button>
-        <button className="prototype-btn prototype-btn--primary" onClick={() => setMenuStage("map")}>Continue</button>
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 
-  const renderMapSelect = (): JSX.Element => (
-    <div className="prototype-overlay-card">
-      <h2>Select Map</h2>
-      <div className="prototype-choice-grid">
-        {MAP_ORDER.map((mapId) => {
-          const map = getMapDefinition(mapId);
-          return (
-            <button
-              key={mapId}
-              className={`prototype-choice ${selectedMap === mapId ? "is-selected" : ""}`}
-              style={{ borderColor: `rgb(${map.accent[0]}, ${map.accent[1]}, ${map.accent[2]})` }}
-              onClick={() => setSelectedMap(mapId)}
-            >
-              <strong>{map.name}</strong>
-              <span>{map.description}</span>
-            </button>
-          );
-        })}
-      </div>
-      <div className="prototype-overlay-actions">
-        <button className="prototype-btn" onClick={() => setMenuStage("difficulty")}>Back</button>
-        {selectedMode === "sandbox" ? (
-          <button className="prototype-btn prototype-btn--primary" onClick={() => setMenuStage("sandbox")}>Continue</button>
-        ) : (
-          <button className="prototype-btn prototype-btn--primary" onClick={startGame}>Start Classic Run</button>
-        )}
-      </div>
+  const renderOverlayCard = (content: JSX.Element, wide = false): JSX.Element => (
+    <div className={`prototype-overlay-card ${wide ? "prototype-overlay-card--wide" : ""}`}>
+      {renderSettings()}
+      {content}
     </div>
   );
+
+  const renderStart = (): JSX.Element =>
+    renderOverlayCard(
+      <>
+        <h1>{text.start.title}</h1>
+        <p>{text.start.description}</p>
+        <button className="prototype-btn prototype-btn--primary" onClick={() => setMenuStage("mode")}>
+          {text.actions.start}
+        </button>
+      </>,
+    );
+
+  const renderModeSelect = (): JSX.Element =>
+    renderOverlayCard(
+      <>
+        <h2>{text.mode.title}</h2>
+        <div className="prototype-choice-grid">
+          <button
+            className={`prototype-choice ${selectedMode === "classic" ? "is-selected" : ""}`}
+            onClick={() => setSelectedMode("classic")}
+          >
+            <strong>{text.mode.classicTitle}</strong>
+            <span>{text.mode.classicDescription}</span>
+          </button>
+          <button
+            className={`prototype-choice ${selectedMode === "sandbox" ? "is-selected" : ""}`}
+            onClick={() => setSelectedMode("sandbox")}
+          >
+            <strong>{text.mode.sandboxTitle}</strong>
+            <span>{text.mode.sandboxDescription}</span>
+          </button>
+        </div>
+        <div className="prototype-overlay-actions">
+          <button className="prototype-btn" onClick={() => setMenuStage("start")}>{text.actions.back}</button>
+          <button className="prototype-btn prototype-btn--primary" onClick={() => setMenuStage("difficulty")}>{text.actions.continue}</button>
+        </div>
+      </>,
+    );
+
+  const renderDifficulty = (): JSX.Element =>
+    renderOverlayCard(
+      <>
+        <h2>{text.difficulty.title}</h2>
+        <div className="prototype-list-grid">
+          {DIFFICULTY_ORDER.map((difficulty) => (
+            <button
+              key={difficulty}
+              className={`prototype-list-item ${selectedDifficulty === difficulty ? "is-selected" : ""}`}
+              onClick={() => setSelectedDifficulty(difficulty)}
+            >
+              <strong>{text.difficulty.labels[difficulty]}</strong>
+              <span>{text.difficulty.multiplierLabel} x{DIFFICULTIES[difficulty].countMult.toFixed(1)}</span>
+            </button>
+          ))}
+        </div>
+        <div className="prototype-overlay-actions">
+          <button className="prototype-btn" onClick={() => setMenuStage("mode")}>{text.actions.back}</button>
+          <button className="prototype-btn prototype-btn--primary" onClick={() => setMenuStage("map")}>{text.actions.continue}</button>
+        </div>
+      </>,
+    );
+
+  const renderMapSelect = (): JSX.Element =>
+    renderOverlayCard(
+      <>
+        <h2>{text.map.title}</h2>
+        <div className="prototype-choice-grid">
+          {MAP_ORDER.map((mapId) => {
+            const map = getMapDefinition(mapId);
+            return (
+              <button
+                key={mapId}
+                className={`prototype-choice ${selectedMap === mapId ? "is-selected" : ""}`}
+                style={{ borderColor: `rgb(${map.accent[0]}, ${map.accent[1]}, ${map.accent[2]})` }}
+                onClick={() => setSelectedMap(mapId)}
+              >
+                <strong>{map.name}</strong>
+                <span>{map.description}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="prototype-overlay-actions">
+          <button className="prototype-btn" onClick={() => setMenuStage("difficulty")}>{text.actions.back}</button>
+          {selectedMode === "sandbox" ? (
+            <button className="prototype-btn prototype-btn--primary" onClick={() => setMenuStage("sandbox")}>{text.actions.continue}</button>
+          ) : (
+            <button className="prototype-btn prototype-btn--primary" onClick={startGame}>{text.map.startClassic}</button>
+          )}
+        </div>
+      </>,
+    );
 
   const renderSandbox = (): JSX.Element => {
     const selectedSlotValidation = selectedSlot ? slotValidationById.get(selectedSlot.id) : null;
 
-    return (
-      <div className="prototype-overlay-card prototype-overlay-card--wide">
-        <h2>Sandbox Slot Editor</h2>
-        <p className="prototype-muted">
-          Spawn order is blockwise by slot order. Formula per slot: start gate, base plus additive 10-round bands, linear multiplier scaling, rounding, and non-negative clamp.
-        </p>
+    return renderOverlayCard(
+      <>
+        <h2>{text.sandbox.title}</h2>
+        <p className="prototype-muted">{text.sandbox.description}</p>
 
         <div className="sandbox-layout">
           <div className="sandbox-slots">
@@ -353,11 +498,11 @@ export function PrototypeCanvas(): JSX.Element {
                     <span className={`enemy-chip enemy-chip--${slot.enemyType}`}>{ENEMY_GLYPHS[slot.enemyType]}</span>
                     <strong>{slot.id}</strong>
                   </div>
-                  <div className="sandbox-slot-body">{slotPreviewText(slot)}</div>
+                  <div className="sandbox-slot-body">{slotPreviewText(slot, text)}</div>
                 </button>
               );
             })}
-            <button className="prototype-btn prototype-btn--add" onClick={addSlot}>+ Add Slot</button>
+            <button className="prototype-btn prototype-btn--add" onClick={addSlot}>{text.sandbox.addSlot}</button>
           </div>
 
           <div className="sandbox-editor-panel">
@@ -365,12 +510,12 @@ export function PrototypeCanvas(): JSX.Element {
               <>
                 <div className="sandbox-editor-grid">
                   <label>
-                    Enemy
+                    {text.sandbox.fields.enemy}
                     <select
                       value={selectedSlot.enemyType}
                       onChange={(event) => updateSelectedSlot({ enemyType: event.target.value as SandboxEnemyType })}
                     >
-                      {Object.entries(ENEMY_LABELS).map(([value, label]) => (
+                      {Object.entries(text.enemyLabels).map(([value, label]) => (
                         <option key={value} value={value}>
                           {label}
                         </option>
@@ -380,14 +525,14 @@ export function PrototypeCanvas(): JSX.Element {
 
                   {selectedSlot.enemyType === "boss" ? (
                     <label>
-                      Boss Profile
+                      {text.sandbox.fields.bossProfile}
                       <select
                         value={selectedSlot.bossStage}
                         onChange={(event) => updateSelectedSlot({ bossStage: Number.parseInt(event.target.value, 10) || 1 })}
                       >
                         {Object.entries(BOSS_PROFILES).map(([stageText, profile]) => (
                           <option key={stageText} value={stageText}>
-                            Stage {stageText}: {profile.name}
+                            {text.sandbox.fields.stage} {stageText}: {profile.name}
                           </option>
                         ))}
                       </select>
@@ -395,7 +540,7 @@ export function PrototypeCanvas(): JSX.Element {
                   ) : null}
 
                   <label>
-                    Start Round
+                    {text.sandbox.fields.startRound}
                     <input
                       type="number"
                       min={1}
@@ -406,7 +551,7 @@ export function PrototypeCanvas(): JSX.Element {
                   </label>
 
                   <label>
-                    Base Count
+                    {text.sandbox.fields.baseCount}
                     <input
                       type="number"
                       min={0}
@@ -417,7 +562,7 @@ export function PrototypeCanvas(): JSX.Element {
                   </label>
 
                   <label>
-                    Multiplier
+                    {text.sandbox.fields.multiplier}
                     <input
                       type="number"
                       min={0}
@@ -429,7 +574,7 @@ export function PrototypeCanvas(): JSX.Element {
                   </label>
 
                   <label>
-                    Add Every 10 Rounds
+                    {text.sandbox.fields.addEvery10Rounds}
                     <input
                       type="number"
                       min={0}
@@ -446,10 +591,10 @@ export function PrototypeCanvas(): JSX.Element {
                     checked={selectedSlot.enabled}
                     onChange={(event) => updateSelectedSlot({ enabled: event.target.checked })}
                   />
-                  Slot enabled
+                  {text.sandbox.slotEnabled}
                 </label>
 
-                <p className="sandbox-preview-line">{slotPreviewText(selectedSlot)}</p>
+                <p className="sandbox-preview-line">{slotPreviewText(selectedSlot, text)}</p>
 
                 {selectedSlotValidation && !selectedSlotValidation.valid ? (
                   <ul className="prototype-errors">
@@ -460,11 +605,11 @@ export function PrototypeCanvas(): JSX.Element {
                 ) : null}
 
                 <button className="prototype-btn prototype-btn--danger" onClick={removeSelectedSlot}>
-                  Remove Selected Slot
+                  {text.sandbox.removeSelectedSlot}
                 </button>
               </>
             ) : (
-              <p className="prototype-muted">Add a slot to configure sandbox spawning.</p>
+              <p className="prototype-muted">{text.sandbox.emptyHint}</p>
             )}
           </div>
         </div>
@@ -472,9 +617,9 @@ export function PrototypeCanvas(): JSX.Element {
         <div className="sandbox-preview-grid">
           {previewRounds.map(({ round, info }) => (
             <div className="sandbox-round-preview" key={round}>
-              <strong>Round {round}</strong>
+              <strong>{text.preview.round} {round}</strong>
               <span>
-                Total {info.count} | B {info.basic} | R {info.runner} | Br {info.brute} | Sh {info.shield} | Boss {info.bossName}
+                {text.preview.total} {info.count} | {text.preview.basic} {info.basic} | {text.preview.runner} {info.runner} | {text.preview.brute} {info.brute} | {text.preview.shield} {info.shield} | {text.preview.boss} {info.bossName}
               </span>
             </div>
           ))}
@@ -489,16 +634,17 @@ export function PrototypeCanvas(): JSX.Element {
         ) : null}
 
         <div className="prototype-overlay-actions">
-          <button className="prototype-btn" onClick={() => setMenuStage("map")}>Back</button>
+          <button className="prototype-btn" onClick={() => setMenuStage("map")}>{text.actions.back}</button>
           <button
             className="prototype-btn prototype-btn--primary"
             onClick={startGame}
             disabled={!sandboxValidation.valid}
           >
-            Start Sandbox Run
+            {text.actions.start}
           </button>
         </div>
-      </div>
+      </>,
+      true,
     );
   };
 
@@ -520,7 +666,7 @@ export function PrototypeCanvas(): JSX.Element {
 
   return (
     <section
-      className={`prototype-app-shell ${isCompact ? "prototype-app-shell--compact" : "prototype-app-shell--desktop"}`}
+      className={`prototype-app-shell ${isCompact ? "prototype-app-shell--compact" : "prototype-app-shell--desktop"} ${designMode === "arcade" ? "prototype-theme-arcade" : "prototype-theme-standard"}`}
       aria-label="TauriTwoer tower defense prototype"
     >
       <canvas className={`prototype-canvas ${isPlaying ? "" : "prototype-canvas--inactive"}`} ref={canvasRef} />
