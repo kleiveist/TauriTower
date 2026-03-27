@@ -6,6 +6,11 @@ import { TOWER_TYPES } from "../data/towers";
 import { updateBullet } from "../domain/bullet";
 import { updateEnemy } from "../domain/enemy";
 import {
+  buildDisplayedTowerPriceMap,
+  createInitialTowerPriceMap,
+  getNextStoredTowerPriceAfterPurchase,
+} from "../domain/pricing";
+import {
   buildSandboxWavePlan,
   cloneSandboxConfig,
   createDefaultSandboxConfig,
@@ -29,11 +34,13 @@ import type {
   SandboxConfig,
   SpawnKey,
   TowerName,
+  TowerPriceMap,
 } from "../types";
 
 interface MutableSessionState {
   difficulty: DifficultyProfile;
   snapshot: GameSnapshot;
+  storedTowerPrices: TowerPriceMap;
   waveSpawnIndex: number;
   nextEnemyId: number;
   nextTowerId: number;
@@ -65,6 +72,7 @@ class GameSessionImpl implements GameSession {
     const sandboxConfig = options.sandboxConfig
       ? cloneSandboxConfig(options.sandboxConfig)
       : createDefaultSandboxConfig();
+    const initialStoredTowerPrices = createInitialTowerPriceMap();
 
     this.state = {
       difficulty,
@@ -73,7 +81,9 @@ class GameSessionImpl implements GameSession {
         mode,
         mapId,
         sandboxConfig,
+        towerPrices: buildDisplayedTowerPriceMap(1, difficultyName, initialStoredTowerPrices),
       }),
+      storedTowerPrices: initialStoredTowerPrices,
       waveSpawnIndex: 0,
       nextEnemyId: 1,
       nextTowerId: 1,
@@ -99,8 +109,10 @@ class GameSessionImpl implements GameSession {
     const sandboxConfig = options?.sandboxConfig
       ? cloneSandboxConfig(options.sandboxConfig)
       : cloneSandboxConfig(previous.sandboxConfig);
+    const storedTowerPrices = createInitialTowerPriceMap();
 
     this.state.difficulty = difficulty;
+    this.state.storedTowerPrices = storedTowerPrices;
     this.state.snapshot = {
       state: "playing",
       mode,
@@ -115,6 +127,7 @@ class GameSessionImpl implements GameSession {
       enemies: [],
       bullets: [],
       selectedTowerName: null,
+      towerPrices: buildDisplayedTowerPriceMap(1, difficultyName, storedTowerPrices),
       waveActive: false,
       wavePlan: [],
       spawnTimer: 0,
@@ -330,6 +343,7 @@ class GameSessionImpl implements GameSession {
       money: source.money,
       lives: source.lives,
       selectedTowerName: source.selectedTowerName,
+      towerPrices: { ...source.towerPrices },
       waveActive: source.waveActive,
       wavePlan: [...source.wavePlan],
       spawnTimer: source.spawnTimer,
@@ -392,11 +406,17 @@ class GameSessionImpl implements GameSession {
   }
 
   private refreshWavePreview(): void {
-    this.state.snapshot.nextWavePreview = this.previewFor(
-      this.state.snapshot.level,
-      this.state.snapshot.mode,
+    const snapshot = this.state.snapshot;
+    snapshot.nextWavePreview = this.previewFor(
+      snapshot.level,
+      snapshot.mode,
       this.state.difficulty,
-      this.state.snapshot.sandboxConfig,
+      snapshot.sandboxConfig,
+    );
+    snapshot.towerPrices = buildDisplayedTowerPriceMap(
+      snapshot.level,
+      snapshot.difficultyName,
+      this.state.storedTowerPrices,
     );
   }
 
@@ -543,12 +563,13 @@ class GameSessionImpl implements GameSession {
   private trySelectTower(towerName: TowerName): void {
     const snapshot = this.state.snapshot;
     const towerStats = TOWER_TYPES[towerName];
+    const currentCost = snapshot.towerPrices[towerName];
 
     if (snapshot.level < towerStats.unlock) {
       this.showMessage({ code: "tower_unlocks_at_level", tower: towerName, level: towerStats.unlock }, 1.9);
       return;
     }
-    if (snapshot.money < towerStats.cost) {
+    if (snapshot.money < currentCost) {
       this.showMessage({ code: "not_enough_money" }, 1.6);
       return;
     }
@@ -563,7 +584,7 @@ class GameSessionImpl implements GameSession {
     }
 
     const towerName = snapshot.selectedTowerName;
-    const cost = TOWER_TYPES[towerName].cost;
+    const cost = snapshot.towerPrices[towerName];
 
     if (snapshot.money < cost) {
       this.showMessage({ code: "not_enough_money" }, 1.6);
@@ -583,6 +604,10 @@ class GameSessionImpl implements GameSession {
       towerType: towerName,
       cooldownLeft: 0,
     });
+    this.state.storedTowerPrices[towerName] = getNextStoredTowerPriceAfterPurchase(
+      towerName,
+      this.state.storedTowerPrices,
+    );
     snapshot.selectedTowerName = null;
     this.showMessage({ code: "tower_placed", tower: towerName }, 1.2);
   }
@@ -597,6 +622,7 @@ function createInitialSnapshot(
     mode: GameMode;
     mapId: MapId;
     sandboxConfig: SandboxConfig;
+    towerPrices: TowerPriceMap;
   },
 ): GameSnapshot {
   const maxLevel = options.maxLevelOverride ?? difficulty.maxLevel;
@@ -612,6 +638,7 @@ function createInitialSnapshot(
     money: difficulty.startMoney,
     lives: difficulty.lives,
     selectedTowerName: null,
+    towerPrices: { ...options.towerPrices },
     waveActive: false,
     wavePlan: [],
     spawnTimer: 0,

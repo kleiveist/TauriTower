@@ -723,13 +723,14 @@ function drawSidebar(
     const tower = TOWER_ORDER[i];
     const stats = TOWER_TYPES[tower];
     const card = towerCardRect(i, TOWER_ORDER.length, mode);
+    const currentCost = snapshot.towerPrices[tower];
 
     const unlocked = snapshot.level >= stats.unlock;
-    const affordable = snapshot.money >= stats.cost;
+    const affordable = snapshot.money >= currentCost;
     const selected = snapshot.selectedTowerName === tower;
     const hovered = pointInRect(runtime.pointerWorld, card);
 
-    drawTowerCard(ctx, card, tower, unlocked, affordable, selected, hovered, mode, runtime, theme);
+    drawTowerCard(ctx, card, tower, currentCost, unlocked, affordable, selected, hovered, mode, runtime, theme);
     hitAreas.towerCards.push({ tower, rect: card });
   }
 
@@ -873,6 +874,7 @@ function drawTowerCard(
   ctx: CanvasRenderingContext2D,
   card: Rect,
   tower: TowerName,
+  currentCost: number,
   unlocked: boolean,
   affordable: boolean,
   selected: boolean,
@@ -955,7 +957,11 @@ function drawTowerCard(
   ctx.textAlign = "center";
   ctx.fillStyle = theme.textPrimary;
   ctx.font = mode === "compact" ? "700 16px Arial" : "700 18px Arial";
-  ctx.fillText(`${runtime.text.runtime.tower.tooltip.cost} ${stats.cost}`, costBadge.x + costBadge.w * 0.5, costBadge.y + costBadge.h * 0.68);
+  ctx.fillText(
+    `${runtime.text.runtime.tower.tooltip.cost} ${currentCost}`,
+    costBadge.x + costBadge.w * 0.5,
+    costBadge.y + costBadge.h * 0.68,
+  );
 
   if (!unlocked) {
     ctx.fillStyle = theme.arcade ? "#ffe06e" : "#ffdd8d";
@@ -999,6 +1005,7 @@ function drawTowerTooltip(
 
   const tower = tooltipState.tower;
   const stats = TOWER_TYPES[tower];
+  const currentCost = snapshot.towerPrices[tower];
   const tooltipSize = runtime.uiMode === "compact" ? { w: 356, h: 196 } : { w: 374, h: 210 };
 
   const pos = resolveTooltipPlacement(
@@ -1022,7 +1029,7 @@ function drawTowerTooltip(
 
   ctx.fillStyle = theme.textSecondary;
   ctx.font = "600 17px Arial";
-  ctx.fillText(`${runtime.text.runtime.tower.tooltip.cost} ${stats.cost}`, pos.x + 16, pos.y + 64);
+  ctx.fillText(`${runtime.text.runtime.tower.tooltip.cost} ${currentCost}`, pos.x + 16, pos.y + 64);
   ctx.fillText(`${runtime.text.runtime.tower.tooltip.dps} ${formatTowerDps(stats)}`, pos.x + 142, pos.y + 64);
   ctx.fillText(`${runtime.text.runtime.tower.tooltip.range} ${Math.round(stats.range)}`, pos.x + 258, pos.y + 64);
 

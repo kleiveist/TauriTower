@@ -24,7 +24,7 @@ function tickUntil(
 }
 
 describe("session flow", () => {
-  it("uses panzer tower cost 1000 for all purchase checks", () => {
+  it("uses panzer tower base cost 1000", () => {
     expect(TOWER_TYPES["Panzer-Tower"].cost).toBe(1000);
   });
 
@@ -189,5 +189,45 @@ describe("session flow", () => {
     const running = session.getSnapshot();
     expect(running.spawnedThisWave).toBeGreaterThan(0);
     expect(running.wavePlan.length).toBe(totalPlanned);
+  });
+
+  it("resets dynamic tower prices on restart", () => {
+    const session = createGameSession({ seed: 122 });
+    session.applyAction({ type: "chooseDifficulty", difficulty: "leicht" });
+
+    expect(session.getSnapshot().towerPrices.Pistolman).toBe(60);
+
+    session.applyAction({ type: "selectTower", tower: "Pistolman" });
+    session.applyAction({ type: "placeTower", position: { x: 120, y: 260 } });
+    expect(session.getSnapshot().towerPrices.Pistolman).toBeGreaterThan(60);
+
+    session.applyAction({ type: "restart" });
+
+    const resetSnapshot = session.getSnapshot();
+    expect(resetSnapshot.towerPrices.Pistolman).toBe(60);
+    expect(resetSnapshot.towerPrices["Panzer-Tower"]).toBe(1000);
+  });
+
+  it("uses the exact displayed dynamic price for purchase checks and money deduction", () => {
+    const session = createGameSession({ seed: 123 });
+    session.applyAction({ type: "chooseDifficulty", difficulty: "leicht" });
+
+    const beforeFirstBuy = session.getSnapshot();
+    const firstDisplayedPrice = beforeFirstBuy.towerPrices.Pistolman;
+
+    session.applyAction({ type: "selectTower", tower: "Pistolman" });
+    session.applyAction({ type: "placeTower", position: { x: 120, y: 260 } });
+
+    const afterFirstBuy = session.getSnapshot();
+    expect(beforeFirstBuy.money - afterFirstBuy.money).toBe(firstDisplayedPrice);
+
+    const secondDisplayedPrice = afterFirstBuy.towerPrices.Pistolman;
+    expect(secondDisplayedPrice).toBeGreaterThan(firstDisplayedPrice);
+
+    session.applyAction({ type: "selectTower", tower: "Pistolman" });
+    session.applyAction({ type: "placeTower", position: { x: 120, y: 340 } });
+
+    const afterSecondBuy = session.getSnapshot();
+    expect(afterFirstBuy.money - afterSecondBuy.money).toBe(secondDisplayedPrice);
   });
 });

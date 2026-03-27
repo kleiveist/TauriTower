@@ -198,6 +198,8 @@ export interface TowerSnapshot {
   cooldownLeft: number;
 }
 
+export type TowerPriceMap = Record<TowerName, number>;
+
 export interface WavePreview {
   count: number;
   boss: boolean;
@@ -218,6 +220,7 @@ export interface GameSnapshot {
   money: number;
   lives: number;
   selectedTowerName: TowerName | null;
+  towerPrices: TowerPriceMap;
   waveActive: boolean;
   wavePlan: SpawnKey[];
   spawnTimer: number;

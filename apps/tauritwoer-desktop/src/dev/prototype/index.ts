@@ -25,6 +25,7 @@ export type {
   SandboxSlotValidationResult,
   SpawnKey,
   TowerName,
+  TowerPriceMap,
   TowerSnapshot,
   TowerStats,
   WavePreview,

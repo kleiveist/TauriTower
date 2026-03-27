@@ -451,9 +451,10 @@ class PrototypeControllerImpl implements PrototypeController {
     }
 
     const stats = TOWER_TYPES[towerName];
+    const cost = this.snapshot.towerPrices[towerName];
     const pathPoints = getMapDefinition(this.snapshot.mapId).pathPoints;
     const validPlacement =
-      this.snapshot.money >= stats.cost &&
+      this.snapshot.money >= cost &&
       validTowerPosition(this.pointerWorld, this.snapshot.towers, pathPoints);
 
     return {
