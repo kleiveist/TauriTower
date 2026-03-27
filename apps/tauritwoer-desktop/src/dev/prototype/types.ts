@@ -272,6 +272,7 @@ export type GameAction =
 export interface GameSession {
   tick(dtSeconds: number): void;
   applyAction(action: GameAction): void;
+  getLiveSnapshot(): Readonly<GameSnapshot>;
   getSnapshot(): GameSnapshot;
   reset(difficulty: DifficultyName, options?: ResetOptions): void;
 }

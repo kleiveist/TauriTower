@@ -24,14 +24,17 @@ import type {
 } from "../types";
 import { createPrototypeController } from "./controller";
 import {
+  DEFAULT_DEBUG_MODE,
   DEFAULT_DESIGN_MODE,
   DEFAULT_UI_LANGUAGE,
   UI_PREFERENCE_KEYS,
   formatSandboxValidationIssue,
   getBossName,
   getTranslations,
+  isDebugMode,
   isDesignMode,
   isUiLanguage,
+  type DebugMode,
   type DesignMode,
   type PrototypeTranslations,
   type UiLanguage,
@@ -103,6 +106,19 @@ function readStoredDesignMode(): DesignMode {
   }
 }
 
+function readStoredDebugMode(): DebugMode {
+  if (typeof window === "undefined") {
+    return DEFAULT_DEBUG_MODE;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(UI_PREFERENCE_KEYS.debugMode);
+    return isDebugMode(stored) ? stored : DEFAULT_DEBUG_MODE;
+  } catch {
+    return DEFAULT_DEBUG_MODE;
+  }
+}
+
 interface OverlayCardOptions {
   title: string;
   description?: string;
@@ -125,6 +141,7 @@ export function PrototypeCanvas(): JSX.Element {
 
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(readStoredLanguage);
   const [designMode, setDesignMode] = useState<DesignMode>(readStoredDesignMode);
+  const [debugMode, setDebugMode] = useState<DebugMode>(readStoredDebugMode);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [selectedMode, setSelectedMode] = useState<GameMode>("classic");
@@ -169,7 +186,7 @@ export function PrototypeCanvas(): JSX.Element {
     });
 
     controller.start();
-    controller.setPresentation({ language: uiLanguage, designMode });
+    controller.setPresentation({ language: uiLanguage, designMode, debugMode: debugMode === "on" });
     controller.setInputEnabled(false);
     resizeObserver.observe(canvas);
     resizeCanvas();
@@ -189,8 +206,8 @@ export function PrototypeCanvas(): JSX.Element {
   }, [isPlaying]);
 
   useEffect(() => {
-    controllerRef.current?.setPresentation({ language: uiLanguage, designMode });
-  }, [uiLanguage, designMode]);
+    controllerRef.current?.setPresentation({ language: uiLanguage, designMode, debugMode: debugMode === "on" });
+  }, [uiLanguage, designMode, debugMode]);
 
   useEffect(() => {
     if (sandboxConfig.slots.length === 0) {
@@ -220,6 +237,14 @@ export function PrototypeCanvas(): JSX.Element {
       // Ignore storage write errors in restricted environments.
     }
   }, [designMode]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(UI_PREFERENCE_KEYS.debugMode, debugMode);
+    } catch {
+      // Ignore storage write errors in restricted environments.
+    }
+  }, [debugMode]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -372,6 +397,22 @@ export function PrototypeCanvas(): JSX.Element {
                   onClick={() => setDesignMode(mode)}
                 >
                   {text.settings.designOptionLabels[mode]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="prototype-settings-section">
+            <div className="prototype-settings-label">{text.settings.debug}</div>
+            <div className="prototype-settings-options">
+              {(Object.keys(text.settings.debugOptionLabels) as DebugMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  className={`prototype-settings-option ${debugMode === mode ? "is-selected" : ""}`}
+                  type="button"
+                  onClick={() => setDebugMode(mode)}
+                >
+                  {text.settings.debugOptionLabels[mode]}
                 </button>
               ))}
             </div>

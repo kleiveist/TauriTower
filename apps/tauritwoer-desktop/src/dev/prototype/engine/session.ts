@@ -34,6 +34,7 @@ import type {
 interface MutableSessionState {
   difficulty: DifficultyProfile;
   snapshot: GameSnapshot;
+  waveSpawnIndex: number;
   nextEnemyId: number;
   nextTowerId: number;
   nextBulletId: number;
@@ -73,6 +74,7 @@ class GameSessionImpl implements GameSession {
         mapId,
         sandboxConfig,
       }),
+      waveSpawnIndex: 0,
       nextEnemyId: 1,
       nextTowerId: 1,
       nextBulletId: 1,
@@ -128,6 +130,7 @@ class GameSessionImpl implements GameSession {
     this.state.nextEnemyId = 1;
     this.state.nextTowerId = 1;
     this.state.nextBulletId = 1;
+    this.state.waveSpawnIndex = 0;
     this.autoWaveCountdown = -1;
   }
 
@@ -189,6 +192,7 @@ class GameSessionImpl implements GameSession {
       case "returnToMenu": {
         this.state.snapshot.state = "menu";
         this.state.snapshot.selectedTowerName = null;
+        this.state.waveSpawnIndex = 0;
         this.showMessage({ code: "none" }, 0);
         this.autoWaveCountdown = -1;
         break;
@@ -224,13 +228,18 @@ class GameSessionImpl implements GameSession {
       }
     }
 
-    if (snapshot.waveActive && snapshot.wavePlan.length > 0) {
+    if (snapshot.waveActive && this.state.waveSpawnIndex < snapshot.wavePlan.length) {
       snapshot.spawnTimer -= dtSeconds;
       if (snapshot.spawnTimer <= 0) {
-        const enemyType = snapshot.wavePlan.shift() as SpawnKey;
-        this.spawnEnemy(enemyType);
-        snapshot.spawnedThisWave += 1;
-        snapshot.spawnTimer = snapshot.spawnInterval * (enemyType.startsWith("boss_") ? 1.6 : 1.0);
+        const enemyType = snapshot.wavePlan[this.state.waveSpawnIndex];
+        if (!enemyType) {
+          this.state.waveSpawnIndex = snapshot.wavePlan.length;
+        } else {
+          this.state.waveSpawnIndex += 1;
+          this.spawnEnemy(enemyType);
+          snapshot.spawnedThisWave += 1;
+          snapshot.spawnTimer = snapshot.spawnInterval * (enemyType.startsWith("boss_") ? 1.6 : 1.0);
+        }
       }
     }
 
@@ -254,8 +263,13 @@ class GameSessionImpl implements GameSession {
       );
     }
 
+    const enemiesById = new Map<number, (typeof snapshot.enemies)[number]>();
+    for (const enemy of snapshot.enemies) {
+      enemiesById.set(enemy.id, enemy);
+    }
+
     for (const bullet of snapshot.bullets) {
-      const killed = updateBullet(bullet, dtSeconds, snapshot.enemies);
+      const killed = updateBullet(bullet, dtSeconds, snapshot.enemies, enemiesById);
       if (killed.length === 0) {
         continue;
       }
@@ -272,8 +286,14 @@ class GameSessionImpl implements GameSession {
     snapshot.enemies = snapshot.enemies.filter((enemy) => !enemy.dead);
     snapshot.bullets = snapshot.bullets.filter((bullet) => !bullet.dead);
 
-    if (snapshot.waveActive && snapshot.wavePlan.length === 0 && snapshot.enemies.length === 0) {
+    if (
+      snapshot.waveActive &&
+      this.state.waveSpawnIndex >= snapshot.wavePlan.length &&
+      snapshot.enemies.length === 0
+    ) {
       snapshot.waveActive = false;
+      snapshot.wavePlan = [];
+      this.state.waveSpawnIndex = 0;
       snapshot.level += 1;
 
       if (snapshot.level > snapshot.maxLevel) {
@@ -337,6 +357,10 @@ class GameSessionImpl implements GameSession {
     };
   }
 
+  getLiveSnapshot(): Readonly<GameSnapshot> {
+    return this.state.snapshot;
+  }
+
   private previewFor(
     level: number,
     mode: GameMode,
@@ -389,6 +413,7 @@ class GameSessionImpl implements GameSession {
       snapshot.mode === "sandbox"
         ? buildSandboxWavePlan(snapshot.level, snapshot.sandboxConfig)
         : buildWavePlan(snapshot.level, this.state.difficulty);
+    this.state.waveSpawnIndex = 0;
     snapshot.totalWaveEnemies = snapshot.wavePlan.length;
     snapshot.spawnedThisWave = 0;
     snapshot.currentWaveBossStage = null;

@@ -6,6 +6,7 @@ export function updateBullet(
   bullet: BulletSnapshot,
   dt: number,
   enemies: EnemySnapshot[],
+  enemiesById?: ReadonlyMap<number, EnemySnapshot>,
 ): EnemySnapshot[] {
   const killed: EnemySnapshot[] = [];
 
@@ -13,7 +14,7 @@ export function updateBullet(
     return killed;
   }
 
-  const target = enemies.find((enemy) => enemy.id === bullet.targetEnemyId);
+  const target = enemiesById?.get(bullet.targetEnemyId) ?? enemies.find((enemy) => enemy.id === bullet.targetEnemyId);
   if (!target || target.dead || target.reachedEnd) {
     bullet.dead = true;
     return killed;

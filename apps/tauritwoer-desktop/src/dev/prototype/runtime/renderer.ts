@@ -61,6 +61,18 @@ export interface PauseRenderState {
   confirmAction: "restart" | "menu" | null;
 }
 
+export interface DebugHudRenderState {
+  fps: number;
+  frameMs: number;
+  simMs: number;
+  towers: number;
+  enemies: number;
+  bullets: number;
+  waveRemaining: number;
+  waveSpawned: number;
+  waveTotal: number;
+}
+
 export interface RuntimeRenderState {
   pointerWorld: Point;
   speedMultiplier: number;
@@ -72,6 +84,7 @@ export interface RuntimeRenderState {
   designMode: DesignMode;
   text: PrototypeTranslations;
   pauseState: PauseRenderState | null;
+  debug: DebugHudRenderState | null;
 }
 
 export interface RenderHitAreas {
@@ -307,6 +320,10 @@ function drawGameScene(
 
   const message = formatGameMessage(snapshot.message, runtime.language);
   drawTopMessage(ctx, message, theme);
+
+  if (runtime.debug) {
+    drawDebugHud(ctx, runtime, theme);
+  }
 
   if (runtime.pauseState) {
     drawPauseOverlay(ctx, hitAreas, runtime, theme);
@@ -1194,6 +1211,57 @@ function drawTopMessage(ctx: CanvasRenderingContext2D, message: string, theme: C
   ctx.textAlign = "left";
   ctx.font = "600 24px Arial";
   ctx.fillText(message, box.x + 14, box.y + 34);
+  ctx.shadowBlur = 0;
+}
+
+function drawDebugHud(
+  ctx: CanvasRenderingContext2D,
+  runtime: RuntimeRenderState,
+  theme: CanvasTheme,
+): void {
+  const metrics = runtime.debug;
+  if (!metrics) {
+    return;
+  }
+
+  const box: Rect = { x: 24, y: 84, w: 410, h: 124 };
+  roundRect(
+    ctx,
+    box,
+    10,
+    theme.arcade ? "rgba(8, 4, 28, 0.9)" : "rgba(15, 24, 36, 0.88)",
+    theme.arcade ? "#53ffe8" : "#9fc6ed",
+    2,
+  );
+
+  if (theme.arcade) {
+    applyGlow(ctx, "#53ffe8", 10);
+  }
+
+  const labels = runtime.text.runtime.debug;
+  ctx.textAlign = "left";
+  ctx.fillStyle = theme.textPrimary;
+  ctx.font = "700 18px Arial";
+  ctx.fillText(labels.title, box.x + 12, box.y + 24);
+
+  ctx.fillStyle = theme.textSecondary;
+  ctx.font = "500 16px Arial";
+  ctx.fillText(
+    `${labels.fps}: ${metrics.fps.toFixed(1)} | ${labels.frameMs}: ${metrics.frameMs.toFixed(2)} | ${labels.simMs}: ${metrics.simMs.toFixed(2)}`,
+    box.x + 12,
+    box.y + 52,
+  );
+  ctx.fillText(
+    `${labels.towers}: ${metrics.towers} | ${labels.enemies}: ${metrics.enemies} | ${labels.bullets}: ${metrics.bullets}`,
+    box.x + 12,
+    box.y + 78,
+  );
+  ctx.fillText(
+    `${labels.wave}: ${metrics.waveSpawned}/${metrics.waveTotal} | ${labels.remaining}: ${metrics.waveRemaining}`,
+    box.x + 12,
+    box.y + 104,
+  );
+
   ctx.shadowBlur = 0;
 }
 

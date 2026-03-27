@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatGameMessage, formatSandboxValidationIssue, getBossName, TRANSLATIONS } from "./i18n";
+import { formatGameMessage, formatSandboxValidationIssue, getBossName, isDebugMode, TRANSLATIONS } from "./i18n";
 import type { SandboxValidationIssue } from "../types";
 
 function collectKeyPaths(value: unknown, prefix = ""): string[] {
@@ -63,5 +63,11 @@ describe("runtime i18n", () => {
   it("resolves localized boss names", () => {
     expect(getBossName("de", 1)).toBe("Eisenkoloss");
     expect(getBossName("en", 1)).toBe("Iron Colossus");
+  });
+
+  it("validates debug mode options", () => {
+    expect(isDebugMode("on")).toBe(true);
+    expect(isDebugMode("off")).toBe(true);
+    expect(isDebugMode("invalid")).toBe(false);
   });
 });

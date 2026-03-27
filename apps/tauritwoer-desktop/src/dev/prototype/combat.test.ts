@@ -91,4 +91,30 @@ describe("combat systems", () => {
     expect(far.hp).toBe(500);
     expect(bullet.dead).toBe(true);
   });
+
+  it("resolves projectile targets via enemy id map lookup", () => {
+    const target = makeEnemy(11, { hp: 140, maxHp: 140, pos: { x: 180, y: 180 } });
+    const bullet: BulletSnapshot = {
+      id: 77,
+      pos: { x: 180, y: 180 },
+      targetEnemyId: 11,
+      damage: 50,
+      speed: 600,
+      color: [90, 140, 220],
+      bulletType: "single",
+      splashRadius: 0,
+      slowFactor: 1,
+      slowDuration: 0,
+      radius: 4,
+      dead: false,
+    };
+
+    const enemies = [target];
+    const enemyById = new Map<number, EnemySnapshot>([[target.id, target]]);
+
+    updateBullet(bullet, 0.016, enemies, enemyById);
+
+    expect(target.hp).toBeLessThan(140);
+    expect(bullet.dead).toBe(true);
+  });
 });

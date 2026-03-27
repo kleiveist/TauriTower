@@ -88,11 +88,52 @@ Maps are selected before game start and drive:
 - No preset/import/export pipeline yet.
 - Accessibility and advanced editor affordances can be layered later without changing core engine interfaces.
 
+## Runtime Freeze Incident (2026-03)
+
+### Observed Problem
+
+- During longer play sessions (late waves, higher tower/projectile density), the game could become progressively slower and eventually appear frozen/unresponsive.
+- The issue was more likely after extended runtime in classic high-wave scenarios and heavy sandbox spawn setups.
+
+### Reproduction Pattern
+
+- Start a long session (for example `unmoeglich`), play into later waves, and keep placing towers so projectile pressure increases.
+- In pre-fix builds, frame pacing deteriorates over time and can end in a practical hang.
+
+### Actual Root Cause
+
+- `GameSession.getSnapshot()` performed full deep clones (arrays + nested objects for towers/enemies/bullets/wavePlan).
+- The runtime controller called this cloning path from the fixed-step game loop, creating persistent allocation churn and GC pressure.
+- Additional pressure came from:
+  - wave spawning via `Array.shift()` (reindex cost on each spawn)
+  - projectile target lookup via repeated linear `find` scans
+
+### Affected Modules
+
+- `engine/session.ts` (snapshot lifecycle, wave spawning, bullet update flow)
+- `runtime/controller.ts` (fixed-step loop snapshot sync)
+- `domain/bullet.ts` (target lookup strategy)
+
+### Fix Summary
+
+- Added a non-cloning live snapshot accessor for runtime loop usage.
+- Kept defensive clone snapshots for tests/external safety.
+- Replaced wave `shift()` consumption with an internal spawn cursor.
+- Added per-tick enemy id map for O(1) projectile target resolution.
+- Added optional debug mode (settings toggle) with runtime HUD metrics and throttled overload warnings.
+
+### Stability Guardrails
+
+- Debug HUD now shows FPS, frame/sim timings, and entity counters (towers/enemies/bullets + wave progress).
+- Throttled warnings are emitted on abnormal runtime pressure to make regressions visible early.
+- Gameplay mechanics are preserved; changes target lifecycle/performance internals only.
+
 ## Overlay Settings
 
 Each overlay card has a top-right settings button with a popover for:
 
 - Language: `DE` / `EN`
 - Design mode: `Standard` / `Arcade`
+- Debug mode: `On` / `Off`
 
 The selected values are persisted in `localStorage` and restored on next app launch.

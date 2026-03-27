@@ -32,6 +32,7 @@ import {
 import { createViewport, pointInRect, toWorldPosition } from "./layout";
 import { renderPrototypeFrame } from "./renderer";
 import type {
+  DebugHudRenderState,
   PauseRenderState,
   PrototypeScreen,
   RenderHitAreas,
@@ -43,6 +44,13 @@ import { getResponsiveMode, TOOLTIP_HOVER_DELAY_MS, type ResponsiveUIMode } from
 const FIXED_STEP = 1 / FPS;
 const MAX_FRAME_DELTA = 0.12;
 const MAX_STEPS_PER_FRAME = 8;
+const DEBUG_WARN_INTERVAL_MS = 5000;
+const DEBUG_WARN_THRESHOLDS = {
+  enemies: 360,
+  bullets: 1200,
+  simMs: 10,
+  fps: 30,
+} as const;
 
 export interface StartGameConfig {
   difficulty: DifficultyName;
@@ -54,6 +62,7 @@ export interface StartGameConfig {
 export interface PresentationPreferences {
   language: UiLanguage;
   designMode: DesignMode;
+  debugMode: boolean;
 }
 
 export interface PrototypeControllerOptions {
@@ -121,6 +130,16 @@ class PrototypeControllerImpl implements PrototypeController {
 
   private designMode: DesignMode = DEFAULT_DESIGN_MODE;
 
+  private debugMode = false;
+
+  private avgFps = 0;
+
+  private avgFrameMs = 0;
+
+  private avgSimMs = 0;
+
+  private lastDebugWarningAtMs = 0;
+
   private text: PrototypeTranslations = getTranslations(DEFAULT_UI_LANGUAGE);
 
   private animationFrame = 0;
@@ -140,7 +159,7 @@ class PrototypeControllerImpl implements PrototypeController {
       mapId: DEFAULT_MAP_ID,
       sandboxConfig: createDefaultSandboxConfig(),
     });
-    this.snapshot = this.session.getSnapshot();
+    this.snapshot = this.session.getLiveSnapshot() as GameSnapshot;
 
     const context = this.canvas.getContext("2d");
     if (!context) {
@@ -241,6 +260,12 @@ class PrototypeControllerImpl implements PrototypeController {
       changed = true;
     }
 
+    if (this.debugMode !== preferences.debugMode) {
+      this.debugMode = preferences.debugMode;
+      this.lastDebugWarningAtMs = 0;
+      changed = true;
+    }
+
     if (changed) {
       this.render();
     }
@@ -263,7 +288,7 @@ class PrototypeControllerImpl implements PrototypeController {
   }
 
   getSnapshot(): GameSnapshot {
-    return this.snapshot;
+    return this.session.getSnapshot();
   }
 
   private simulateStep(dtSeconds: number): void {
@@ -272,7 +297,6 @@ class PrototypeControllerImpl implements PrototypeController {
     }
 
     this.session.tick(dtSeconds);
-    this.snapshot = this.session.getSnapshot();
   }
 
   private render(): void {
@@ -287,6 +311,7 @@ class PrototypeControllerImpl implements PrototypeController {
       designMode: this.designMode,
       text: this.text,
       pauseState: this.getPauseRenderState(),
+      debug: this.getDebugRenderState(),
     });
 
     this.updateCursor(this.pointerWorld);
@@ -294,7 +319,7 @@ class PrototypeControllerImpl implements PrototypeController {
 
   private applyAction(action: GameAction): void {
     this.session.applyAction(action);
-    this.snapshot = this.session.getSnapshot();
+    this.snapshot = this.session.getLiveSnapshot() as GameSnapshot;
   }
 
   private resetSpeedMultiplier(): void {
@@ -341,6 +366,78 @@ class PrototypeControllerImpl implements PrototypeController {
     return {
       confirmAction: this.pauseConfirmAction,
     };
+  }
+
+  private getDebugRenderState(): DebugHudRenderState | null {
+    if (!this.debugMode) {
+      return null;
+    }
+
+    return {
+      fps: this.avgFps,
+      frameMs: this.avgFrameMs,
+      simMs: this.avgSimMs,
+      towers: this.snapshot.towers.length,
+      enemies: this.snapshot.enemies.length,
+      bullets: this.snapshot.bullets.length,
+      waveRemaining: Math.max(0, this.snapshot.totalWaveEnemies - this.snapshot.spawnedThisWave),
+      waveSpawned: this.snapshot.spawnedThisWave,
+      waveTotal: this.snapshot.totalWaveEnemies,
+    };
+  }
+
+  private updateFrameMetrics(frameDurationMs: number, simulationMs: number): void {
+    const alpha = 0.16;
+    const fps = frameDurationMs > 0 ? 1000 / frameDurationMs : 0;
+
+    this.avgFps = this.avgFps === 0 ? fps : this.avgFps + (fps - this.avgFps) * alpha;
+    this.avgFrameMs =
+      this.avgFrameMs === 0
+        ? frameDurationMs
+        : this.avgFrameMs + (frameDurationMs - this.avgFrameMs) * alpha;
+    this.avgSimMs =
+      this.avgSimMs === 0
+        ? simulationMs
+        : this.avgSimMs + (simulationMs - this.avgSimMs) * alpha;
+  }
+
+  private maybeWarnDebugOverload(nowMs: number): void {
+    if (!this.debugMode) {
+      return;
+    }
+
+    if (this.snapshot.state !== "playing" || !this.inputEnabled) {
+      return;
+    }
+
+    if (nowMs - this.lastDebugWarningAtMs < DEBUG_WARN_INTERVAL_MS) {
+      return;
+    }
+
+    const enemies = this.snapshot.enemies.length;
+    const bullets = this.snapshot.bullets.length;
+    const overloaded =
+      enemies >= DEBUG_WARN_THRESHOLDS.enemies ||
+      bullets >= DEBUG_WARN_THRESHOLDS.bullets ||
+      this.avgSimMs >= DEBUG_WARN_THRESHOLDS.simMs ||
+      (this.avgFps > 0 && this.avgFps <= DEBUG_WARN_THRESHOLDS.fps);
+
+    if (!overloaded) {
+      return;
+    }
+
+    this.lastDebugWarningAtMs = nowMs;
+    console.warn("[TauriTwoer][Debug] Runtime pressure detected", {
+      fps: this.avgFps.toFixed(1),
+      simMs: this.avgSimMs.toFixed(2),
+      frameMs: this.avgFrameMs.toFixed(2),
+      towers: this.snapshot.towers.length,
+      enemies,
+      bullets,
+      waveSpawned: this.snapshot.spawnedThisWave,
+      waveTotal: this.snapshot.totalWaveEnemies,
+      waveRemaining: Math.max(0, this.snapshot.totalWaveEnemies - this.snapshot.spawnedThisWave),
+    });
   }
 
   private getTowerPreview(): TowerPreviewRenderState | null {
@@ -575,18 +672,29 @@ class PrototypeControllerImpl implements PrototypeController {
       return;
     }
 
+    const frameStartMs = nowMs;
     const delta = Math.min(MAX_FRAME_DELTA, Math.max(0, (nowMs - this.lastFrameMs) / 1000));
     this.lastFrameMs = nowMs;
     this.accumulator += delta;
 
     let steps = 0;
+    let simulationMs = 0;
     while (this.accumulator >= FIXED_STEP && steps < MAX_STEPS_PER_FRAME) {
+      const simStartMs = performance.now();
       this.simulateStep(FIXED_STEP * this.speedMultiplier);
+      simulationMs += performance.now() - simStartMs;
       this.accumulator -= FIXED_STEP;
       steps += 1;
     }
 
+    if (steps > 0) {
+      this.snapshot = this.session.getLiveSnapshot() as GameSnapshot;
+    }
+
     const hoverChanged = this.updateHoverTooltip(nowMs);
+    const frameDurationMs = Math.max(0, performance.now() - frameStartMs);
+    this.updateFrameMetrics(frameDurationMs, simulationMs);
+    this.maybeWarnDebugOverload(nowMs);
 
     if (steps > 0 || hoverChanged) {
       this.render();

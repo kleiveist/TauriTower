@@ -11,6 +11,8 @@ export type UiLanguage = "de" | "en";
 
 export type DesignMode = "standard" | "arcade";
 
+export type DebugMode = "off" | "on";
+
 export const BOSS_STAGE_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9] as const;
 
 interface RuntimeMessageTemplates {
@@ -46,8 +48,10 @@ export interface PrototypeTranslations {
     title: string;
     language: string;
     design: string;
+    debug: string;
     languageOptionLabels: Record<UiLanguage, string>;
     designOptionLabels: Record<DesignMode, string>;
+    debugOptionLabels: Record<DebugMode, string>;
   };
   actions: {
     start: string;
@@ -177,6 +181,17 @@ export interface PrototypeTranslations {
       confirm: string;
       cancel: string;
     };
+    debug: {
+      title: string;
+      fps: string;
+      frameMs: string;
+      simMs: string;
+      towers: string;
+      enemies: string;
+      bullets: string;
+      wave: string;
+      remaining: string;
+    };
     messages: RuntimeMessageTemplates;
   };
 }
@@ -185,9 +200,12 @@ export const DEFAULT_UI_LANGUAGE: UiLanguage = "de";
 
 export const DEFAULT_DESIGN_MODE: DesignMode = "standard";
 
+export const DEFAULT_DEBUG_MODE: DebugMode = "off";
+
 export const UI_PREFERENCE_KEYS = {
   language: "tauritwoer.ui.language",
   designMode: "tauritwoer.ui.designMode",
+  debugMode: "tauritwoer.ui.debugMode",
 } as const;
 
 export const TRANSLATIONS: Record<UiLanguage, PrototypeTranslations> = {
@@ -199,6 +217,7 @@ export const TRANSLATIONS: Record<UiLanguage, PrototypeTranslations> = {
       title: "Einstellungen",
       language: "Sprache",
       design: "Design",
+      debug: "Debug",
       languageOptionLabels: {
         de: "Deutsch",
         en: "Englisch",
@@ -206,6 +225,10 @@ export const TRANSLATIONS: Record<UiLanguage, PrototypeTranslations> = {
       designOptionLabels: {
         standard: "Standard",
         arcade: "Arcade Neon",
+      },
+      debugOptionLabels: {
+        off: "Aus",
+        on: "An",
       },
     },
     actions: {
@@ -403,6 +426,17 @@ export const TRANSLATIONS: Record<UiLanguage, PrototypeTranslations> = {
         confirm: "Bestätigen",
         cancel: "Abbrechen",
       },
+      debug: {
+        title: "Debug Metriken",
+        fps: "FPS",
+        frameMs: "Frame ms",
+        simMs: "Sim ms",
+        towers: "Tower",
+        enemies: "Gegner",
+        bullets: "Projektile",
+        wave: "Welle",
+        remaining: "Rest",
+      },
       messages: {
         spaceToStartWave: "Leertaste startet die erste Welle.",
         victoryAllLevels: "Sieg! Alle Runden abgeschlossen.",
@@ -425,6 +459,7 @@ export const TRANSLATIONS: Record<UiLanguage, PrototypeTranslations> = {
       title: "Settings",
       language: "Language",
       design: "Design",
+      debug: "Debug",
       languageOptionLabels: {
         de: "German",
         en: "English",
@@ -432,6 +467,10 @@ export const TRANSLATIONS: Record<UiLanguage, PrototypeTranslations> = {
       designOptionLabels: {
         standard: "Standard",
         arcade: "Arcade Neon",
+      },
+      debugOptionLabels: {
+        off: "Off",
+        on: "On",
       },
     },
     actions: {
@@ -629,6 +668,17 @@ export const TRANSLATIONS: Record<UiLanguage, PrototypeTranslations> = {
         confirm: "Confirm",
         cancel: "Cancel",
       },
+      debug: {
+        title: "Debug Metrics",
+        fps: "FPS",
+        frameMs: "Frame ms",
+        simMs: "Sim ms",
+        towers: "Towers",
+        enemies: "Enemies",
+        bullets: "Bullets",
+        wave: "Wave",
+        remaining: "Remaining",
+      },
       messages: {
         spaceToStartWave: "Press space to start the first wave.",
         victoryAllLevels: "Victory! All rounds completed.",
@@ -651,6 +701,10 @@ export function isUiLanguage(value: string | null): value is UiLanguage {
 
 export function isDesignMode(value: string | null): value is DesignMode {
   return value === "standard" || value === "arcade";
+}
+
+export function isDebugMode(value: string | null): value is DebugMode {
+  return value === "off" || value === "on";
 }
 
 export function getTranslations(language: UiLanguage): PrototypeTranslations {

@@ -156,4 +156,38 @@ describe("session flow", () => {
     expect(snapshot.state).toBe("victory");
     expect(snapshot.level).toBe(2);
   });
+
+  it("provides a stable live snapshot while keeping cloned snapshots detached", () => {
+    const session = createGameSession({ seed: 120 });
+    session.applyAction({ type: "chooseDifficulty", difficulty: "leicht" });
+
+    const liveBefore = session.getLiveSnapshot();
+    const detached = session.getSnapshot();
+
+    session.applyAction({ type: "startWave" });
+    session.tick(0.09);
+
+    const liveAfter = session.getLiveSnapshot();
+    expect(liveAfter).toBe(liveBefore);
+    expect(detached).not.toBe(liveAfter);
+
+    detached.lives = -999;
+    expect(session.getLiveSnapshot().lives).not.toBe(-999);
+  });
+
+  it("uses an internal spawn cursor without shrinking wavePlan during active waves", () => {
+    const session = createGameSession({ seed: 121 });
+    session.applyAction({ type: "chooseDifficulty", difficulty: "leicht" });
+    session.applyAction({ type: "startWave" });
+
+    const started = session.getSnapshot();
+    const totalPlanned = started.wavePlan.length;
+    expect(totalPlanned).toBeGreaterThan(0);
+
+    session.tick(0.09);
+
+    const running = session.getSnapshot();
+    expect(running.spawnedThisWave).toBeGreaterThan(0);
+    expect(running.wavePlan.length).toBe(totalPlanned);
+  });
 });
