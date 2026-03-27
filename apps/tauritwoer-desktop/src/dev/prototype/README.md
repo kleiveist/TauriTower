@@ -16,7 +16,8 @@ This folder contains a fully playable Canvas-based prototype that runs inside th
   - Canvas runtime layers:
     - `controller.ts` input + update loop + menu flow
     - `renderer.ts` drawing + click-hit regions
-    - `layout.ts` responsive viewport/world mapping
+    - `layout.ts` viewport/world mapping + mode-aware sidebar geometry
+    - `ui.ts` responsive breakpoints, tooltip settings, DPS helper, tooltip placement helper
     - `input.ts` key helpers / selection helpers
 - `*.test.ts`
   - Deterministic gameplay tests with Vitest.
@@ -31,6 +32,17 @@ This folder contains a fully playable Canvas-based prototype that runs inside th
    - start wave manually (first and optional later),
    - waves continue with auto-advance after clear.
 4. End state overlay (`victory` or `game_over`) with restart/menu actions.
+
+## Responsive Modes and Tooltip Behavior
+
+- `desktop` mode for viewport width `> 1200`.
+- `compact` mode for viewport width `<= 1200`.
+- Mode switching is automatic on resize.
+- Compact mode uses icon-focused tower cards with always-visible primary data (name, cost, DPS).
+- Full tower details are shown via tooltip:
+  - mouse hover with short delay,
+  - touch-friendly `i` button tap toggle,
+  - tooltip placement is clamped inside the visible game area.
 
 ## Difficulty and Wave Formula
 
@@ -47,25 +59,20 @@ Multipliers:
 
 Boss waves occur every 10 levels (`10, 20, 30, 40, ...`).
 
-## Enemy and Boss Logic
+## Enemy, Boss, and Tower Notes
 
-- Normal enemy archetypes: `basic`, `runner`, `brute`, `shield` (new type).
+- Normal enemy archetypes: `basic`, `runner`, `brute`, `shield`.
 - `shield` is intentionally distinct: high armor/splash resistance with regeneration.
 - Bosses are profile-driven (`data/bosses.ts`) and scale by stage.
-- Each boss stage has different visuals and gameplay stats (HP multiplier, speed, armor, slow resist, regen, reward).
+- Tower damage display uses a consistent DPS formula:
 
-## Towers (including Panzer-Tower)
+`DPS = damage / cooldown`
 
-- Existing tower families are ported with separated stats and projectile behavior.
-- `Panzer-Tower` is a new late-game power tower:
-  - expensive,
-  - high damage,
-  - strong cannon splash profile,
-  - intentionally overpowered compared to base towers.
+- `Panzer-Tower` is the late-game power tower and now costs exactly `1000`.
 
 ## Known Limits / Extension Points
 
 - Prototype focuses on local play; save/load persistence is not implemented yet.
 - UI uses Canvas rendering only (no production-grade accessibility layer yet).
 - Balancing is data-driven; tweak `data/*.ts` without touching domain/engine code.
-- Runtime can be extended with speed controls, pause state, upgrades, and richer effects without changing core API.
+- Runtime can be extended with pause state, upgrades, richer effects, and additional compact interactions without changing core API.

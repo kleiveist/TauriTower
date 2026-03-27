@@ -1,5 +1,6 @@
 import { FIELD_W, SCREEN_H, SCREEN_W, SIDEBAR_W } from "../data/constants";
 import type { Point } from "../types";
+import { getSidebarLayoutConfig, type ResponsiveUIMode } from "./ui";
 
 export interface Rect {
   x: number;
@@ -65,23 +66,67 @@ export function centeredRect(width: number, height: number, yOffset = 0): Rect {
   };
 }
 
-export function towerCardRect(index: number, total: number): Rect {
-  const startY = 406;
-  const gap = 16;
-  const innerX = FIELD_W + 26;
-  const innerW = SIDEBAR_W - 52;
-  const cardW = (innerW - gap) / 2;
-  const cardH = 126;
+export function sidebarInfoRect(mode: ResponsiveUIMode): Rect {
+  const layout = getSidebarLayoutConfig(mode);
+  return {
+    x: FIELD_W + layout.panelPadding,
+    y: layout.infoRectY,
+    w: SIDEBAR_W - layout.panelPadding * 2,
+    h: layout.infoRectHeight,
+  };
+}
 
-  const col = index % 2;
-  const row = Math.floor(index / 2);
+export function sidebarWaveRect(mode: ResponsiveUIMode): Rect {
+  const layout = getSidebarLayoutConfig(mode);
+  return {
+    x: FIELD_W + layout.panelPadding,
+    y: layout.waveRectY,
+    w: SIDEBAR_W - layout.panelPadding * 2,
+    h: layout.waveRectHeight,
+  };
+}
 
-  let x = innerX + col * (cardW + gap);
-  const y = startY + row * (cardH + gap);
+export function startWaveButtonRect(mode: ResponsiveUIMode): Rect {
+  const layout = getSidebarLayoutConfig(mode);
+  return {
+    x: FIELD_W + layout.startWaveSidePadding,
+    y: layout.startWaveY,
+    w: SIDEBAR_W - layout.startWaveSidePadding * 2,
+    h: layout.startWaveHeight,
+  };
+}
 
-  if (total % 2 === 1 && index === total - 1) {
-    x = innerX + (innerW - cardW) * 0.5;
+export function towerCardRect(index: number, total: number, mode: ResponsiveUIMode): Rect {
+  const layout = getSidebarLayoutConfig(mode);
+  const { sidePadding, startY, columns, gapX, gapY, cardHeight } = layout.grid;
+  const innerX = FIELD_W + sidePadding;
+  const innerW = SIDEBAR_W - sidePadding * 2;
+  const cardW = (innerW - gapX * (columns - 1)) / columns;
+
+  const row = Math.floor(index / columns);
+  const rowStart = row * columns;
+  const itemsInRow = Math.min(columns, total - rowStart);
+  const colInRow = index - rowStart;
+
+  const y = startY + row * (cardHeight + gapY);
+
+  let x = innerX + colInRow * (cardW + gapX);
+  if (itemsInRow < columns) {
+    const rowWidth = itemsInRow * cardW + (itemsInRow - 1) * gapX;
+    x = innerX + (innerW - rowWidth) * 0.5 + colInRow * (cardW + gapX);
   }
 
-  return { x, y, w: cardW, h: cardH };
+  return { x, y, w: cardW, h: cardHeight };
+}
+
+export function towerInfoButtonRect(cardRect: Rect, mode: ResponsiveUIMode): Rect {
+  const size = mode === "compact" ? 28 : 24;
+  const inset = mode === "compact" ? 8 : 7;
+
+  return {
+    x: cardRect.x + cardRect.w - size - inset,
+    y: cardRect.y + inset,
+    w: size,
+    h: size,
+  };
 }

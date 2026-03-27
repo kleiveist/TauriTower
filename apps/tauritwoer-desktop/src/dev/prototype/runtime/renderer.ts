@@ -1,10 +1,32 @@
 import { PATH_POINTS, FIELD_W, GRID_SIZE, PATH_WIDTH, SCREEN_H, SCREEN_W, SIDEBAR_W } from "../data/constants";
 import { DIFFICULTIES, DIFFICULTY_ORDER } from "../data/difficulties";
-import { TOWER_DESCRIPTIONS, TOWER_ORDER, TOWER_TYPES } from "../data/towers";
+import {
+  TOWER_DESCRIPTIONS,
+  TOWER_ICON_LABELS,
+  TOWER_ORDER,
+  TOWER_SHORT_LABELS,
+  TOWER_TYPES,
+} from "../data/towers";
 import type { DifficultyName, EnemySnapshot, GameSnapshot, Point, TowerName } from "../types";
 import { difficultyLabel } from "./input";
-import { centeredRect, fieldRect, sidebarRect, towerCardRect } from "./layout";
+import {
+  centeredRect,
+  fieldRect,
+  pointInRect,
+  sidebarInfoRect,
+  sidebarRect,
+  sidebarWaveRect,
+  startWaveButtonRect,
+  towerCardRect,
+  towerInfoButtonRect,
+} from "./layout";
 import type { Rect, Viewport } from "./layout";
+import {
+  formatTowerDps,
+  getSidebarLayoutConfig,
+  resolveTooltipPlacement,
+  type ResponsiveUIMode,
+} from "./ui";
 
 export type PrototypeScreen = "start" | "difficulty" | "playing" | "game_over" | "victory";
 
@@ -25,17 +47,26 @@ export interface TowerPreviewRenderState {
   validPlacement: boolean;
 }
 
+export interface TowerTooltipRenderState {
+  tower: TowerName;
+  anchor: Point;
+  source: "hover" | "touch";
+}
+
 export interface RuntimeRenderState {
   pointerWorld: Point;
   speedMultiplier: number;
   towerPreview: TowerPreviewRenderState | null;
   gameIcon: CanvasImageSource | null;
+  uiMode: ResponsiveUIMode;
+  tooltipState: TowerTooltipRenderState | null;
 }
 
 export interface RenderHitAreas {
   startButton?: Rect;
   difficultyButtons: DifficultyHit[];
   towerCards: TowerHit[];
+  towerInfoButtons: TowerHit[];
   startWaveButton?: Rect;
   restartButton?: Rect;
   menuButton?: Rect;
@@ -51,11 +82,12 @@ export function renderPrototypeFrame(
   const hitAreas: RenderHitAreas = {
     difficultyButtons: [],
     towerCards: [],
+    towerInfoButtons: [],
   };
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#0c1118";
+  ctx.fillStyle = "#0a1016";
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.restore();
 
@@ -64,13 +96,13 @@ export function renderPrototypeFrame(
   ctx.scale(viewport.scale, viewport.scale);
 
   if (screen === "start") {
-    drawStartScreen(ctx, hitAreas, runtime.gameIcon);
+    drawStartScreen(ctx, hitAreas, runtime.gameIcon, runtime.pointerWorld, runtime.uiMode);
     ctx.restore();
     return hitAreas;
   }
 
   if (screen === "difficulty") {
-    drawDifficultyScreen(ctx, hitAreas);
+    drawDifficultyScreen(ctx, hitAreas, runtime.pointerWorld, runtime.uiMode);
     ctx.restore();
     return hitAreas;
   }
@@ -78,7 +110,7 @@ export function renderPrototypeFrame(
   drawGameScene(ctx, snapshot, hitAreas, runtime);
 
   if (screen === "game_over" || screen === "victory") {
-    drawEndOverlay(ctx, screen, hitAreas);
+    drawEndOverlay(ctx, screen, hitAreas, runtime.pointerWorld);
   }
 
   ctx.restore();
@@ -89,83 +121,108 @@ function drawStartScreen(
   ctx: CanvasRenderingContext2D,
   hitAreas: RenderHitAreas,
   gameIcon: CanvasImageSource | null,
+  pointerWorld: Point,
+  uiMode: ResponsiveUIMode,
 ): void {
   const gradient = ctx.createLinearGradient(0, 0, SCREEN_W, SCREEN_H);
-  gradient.addColorStop(0, "#15202f");
-  gradient.addColorStop(1, "#1d2f3f");
+  gradient.addColorStop(0, "#15263a");
+  gradient.addColorStop(1, "#173145");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
-  const panel = centeredRect(920, 520, -40);
-  roundRect(ctx, panel, 22, "#101722", "#4d6783", 2);
+  const compact = uiMode === "compact";
+  const panel = centeredRect(compact ? 820 : 940, compact ? 500 : 540, compact ? -10 : -24);
+  roundRect(ctx, panel, 24, "#0f1824", "#4a6686", 2);
 
-  drawGameIconBadge(ctx, gameIcon, panel.x + 34, panel.y + 34, 122);
+  drawGameIconBadge(ctx, gameIcon, panel.x + 30, panel.y + 30, compact ? 100 : 122);
 
-  ctx.fillStyle = "#f3f7ff";
-  ctx.font = "700 84px Arial";
+  ctx.fillStyle = "#f1f6ff";
+  ctx.font = compact ? "700 62px Arial" : "700 80px Arial";
   ctx.textAlign = "center";
-  ctx.fillText("TauriTwoer Defense", SCREEN_W * 0.5 + 20, panel.y + 138);
+  ctx.fillText("TauriTwoer Defense", SCREEN_W * 0.5 + 6, panel.y + (compact ? 124 : 136));
 
-  ctx.font = "400 32px Arial";
-  ctx.fillStyle = "#b9c8dc";
-  ctx.fillText("Canvas Prototype in Tauri + TypeScript", SCREEN_W * 0.5, panel.y + 206);
+  ctx.font = compact ? "500 28px Arial" : "500 32px Arial";
+  ctx.fillStyle = "#b7c9de";
+  ctx.fillText("Canvas Prototype in Tauri + TypeScript", SCREEN_W * 0.5, panel.y + (compact ? 184 : 206));
 
   const features = [
-    "Menu Flow + Difficulty Selection",
+    "Responsive Desktop + Compact Sidebar",
     "Wave Formula: ceil(level * multiplier)",
     "Boss every 10 levels",
     "Panzer-Tower as late power spike",
   ];
 
-  ctx.font = "500 30px Arial";
+  ctx.font = compact ? "500 24px Arial" : "500 29px Arial";
   features.forEach((line, index) => {
-    ctx.fillText(line, SCREEN_W * 0.5, panel.y + 284 + index * 52);
+    ctx.fillText(line, SCREEN_W * 0.5, panel.y + (compact ? 246 : 284) + index * (compact ? 46 : 50));
   });
 
-  const startButton = centeredRect(420, 92, 225);
-  roundRect(ctx, startButton, 16, "#2a81ff", "#b8d9ff", 3);
+  const startButton = centeredRect(compact ? 340 : 430, compact ? 84 : 92, compact ? 214 : 230);
+  const hovered = pointInRect(pointerWorld, startButton);
+  roundRect(
+    ctx,
+    startButton,
+    16,
+    hovered ? "#3d96ff" : "#2a81ff",
+    hovered ? "#d5e9ff" : "#b8d9ff",
+    3,
+  );
   ctx.fillStyle = "#ffffff";
-  ctx.font = "700 42px Arial";
-  ctx.fillText("Start", startButton.x + startButton.w * 0.5, startButton.y + 60);
+  ctx.font = compact ? "700 38px Arial" : "700 42px Arial";
+  ctx.fillText("Start", startButton.x + startButton.w * 0.5, startButton.y + (compact ? 55 : 60));
 
   hitAreas.startButton = startButton;
 }
 
-function drawDifficultyScreen(ctx: CanvasRenderingContext2D, hitAreas: RenderHitAreas): void {
+function drawDifficultyScreen(
+  ctx: CanvasRenderingContext2D,
+  hitAreas: RenderHitAreas,
+  pointerWorld: Point,
+  uiMode: ResponsiveUIMode,
+): void {
   const gradient = ctx.createLinearGradient(0, 0, SCREEN_W, SCREEN_H);
   gradient.addColorStop(0, "#112130");
-  gradient.addColorStop(1, "#1c3244");
+  gradient.addColorStop(1, "#1b3345");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
 
+  const compact = uiMode === "compact";
   ctx.textAlign = "center";
   ctx.fillStyle = "#eef4ff";
-  ctx.font = "700 74px Arial";
-  ctx.fillText("Select Difficulty", SCREEN_W * 0.5, 160);
+  ctx.font = compact ? "700 62px Arial" : "700 74px Arial";
+  ctx.fillText("Select Difficulty", SCREEN_W * 0.5, compact ? 148 : 164);
 
-  const buttonWidth = 620;
-  const buttonHeight = 118;
-  const startY = 238;
+  const buttonWidth = compact ? 560 : 620;
+  const buttonHeight = compact ? 104 : 118;
+  const startY = compact ? 218 : 244;
 
   DIFFICULTY_ORDER.forEach((difficulty, index) => {
     const rect: Rect = {
       x: (SCREEN_W - buttonWidth) * 0.5,
-      y: startY + index * (buttonHeight + 20),
+      y: startY + index * (buttonHeight + 18),
       w: buttonWidth,
       h: buttonHeight,
     };
 
-    roundRect(ctx, rect, 16, "#1a2b3d", "#75a4d6", 3);
+    const hovered = pointInRect(pointerWorld, rect);
+    roundRect(
+      ctx,
+      rect,
+      16,
+      hovered ? "#24374b" : "#1a2b3d",
+      hovered ? "#9cc7ef" : "#75a4d6",
+      3,
+    );
     ctx.fillStyle = "#f4f8ff";
-    ctx.font = "700 39px Arial";
-    ctx.fillText(difficultyLabel(difficulty), rect.x + rect.w * 0.5, rect.y + 52);
+    ctx.font = compact ? "700 34px Arial" : "700 39px Arial";
+    ctx.fillText(difficultyLabel(difficulty), rect.x + rect.w * 0.5, rect.y + (compact ? 46 : 52));
 
     ctx.fillStyle = "#9fc1e4";
-    ctx.font = "500 24px Arial";
+    ctx.font = compact ? "500 22px Arial" : "500 24px Arial";
     ctx.fillText(
       `Spawn multiplier x${DIFFICULTIES[difficulty].countMult.toFixed(1)}`,
       rect.x + rect.w * 0.5,
-      rect.y + 86,
+      rect.y + (compact ? 78 : 86),
     );
 
     hitAreas.difficultyButtons.push({ difficulty, rect });
@@ -182,7 +239,12 @@ function drawGameScene(
   drawPath(ctx);
   drawTowerPreview(ctx, runtime.towerPreview);
   drawEntities(ctx, snapshot);
-  drawSidebar(ctx, snapshot, hitAreas, runtime.speedMultiplier, runtime.gameIcon);
+  drawSidebar(ctx, snapshot, hitAreas, runtime);
+
+  if (runtime.uiMode === "compact" && runtime.tooltipState) {
+    drawCompactTowerTooltip(ctx, runtime.tooltipState);
+  }
+
   drawTopMessage(ctx, snapshot.message);
 }
 
@@ -474,121 +536,378 @@ function drawSidebar(
   ctx: CanvasRenderingContext2D,
   snapshot: GameSnapshot,
   hitAreas: RenderHitAreas,
-  speedMultiplier: number,
-  gameIcon: CanvasImageSource | null,
+  runtime: RuntimeRenderState,
 ): void {
   const sidebar = sidebarRect();
-  roundRect(ctx, sidebar, 0, "#18232f");
 
-  ctx.strokeStyle = "#37506b";
+  const sidebarGradient = ctx.createLinearGradient(sidebar.x, 0, sidebar.x + sidebar.w, SCREEN_H);
+  sidebarGradient.addColorStop(0, "#152332");
+  sidebarGradient.addColorStop(1, "#192e42");
+  roundRect(ctx, sidebar, 0, sidebarGradient);
+
+  ctx.strokeStyle = "#3f5b77";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(FIELD_W, 0);
   ctx.lineTo(FIELD_W, SCREEN_H);
   ctx.stroke();
 
-  drawGameIconBadge(ctx, gameIcon, FIELD_W + SIDEBAR_W - 98, 18, 66);
+  const mode = runtime.uiMode;
+  const layout = getSidebarLayoutConfig(mode);
+
+  drawGameIconBadge(ctx, runtime.gameIcon, FIELD_W + SIDEBAR_W - 96, 16, mode === "compact" ? 58 : 66);
 
   ctx.textAlign = "left";
   ctx.fillStyle = "#f2f7ff";
-  ctx.font = "700 46px Arial";
-  ctx.fillText("Tower Defense", FIELD_W + 28, 58);
+  ctx.font = mode === "compact" ? "700 40px Arial" : "700 46px Arial";
+  ctx.fillText("Tower Defense", FIELD_W + 26, layout.titleY);
 
-  const infoRect: Rect = { x: FIELD_W + 24, y: 82, w: SIDEBAR_W - 48, h: 210 };
-  roundRect(ctx, infoRect, 14, "#233244", "#4b6887", 2);
-  drawInfoLine(ctx, "Difficulty", difficultyLabel(snapshot.difficultyName), infoRect.x + 14, infoRect.y + 36);
-  drawInfoLine(ctx, "Level", `${Math.min(snapshot.level, snapshot.maxLevel)}/${snapshot.maxLevel}`, infoRect.x + 14, infoRect.y + 66);
-  drawInfoLine(ctx, "Lives", `${snapshot.lives}`, infoRect.x + 14, infoRect.y + 96);
-  drawInfoLine(ctx, "Money", `${snapshot.money}`, infoRect.x + 14, infoRect.y + 126);
-  drawInfoLine(ctx, "Selected", snapshot.selectedTowerName ?? "None", infoRect.x + 14, infoRect.y + 156);
-  drawInfoLine(ctx, "Speed", `${speedMultiplier.toFixed(1)}x`, infoRect.x + 14, infoRect.y + 186);
-
-  const waveRect: Rect = { x: FIELD_W + 24, y: 302, w: SIDEBAR_W - 48, h: 98 };
-  roundRect(ctx, waveRect, 12, "#233244", "#4b6887", 2);
-  ctx.fillStyle = "#dce8f7";
-  ctx.font = "600 21px Arial";
-  ctx.fillText(
-    `Next: ${snapshot.nextWavePreview.count} (B:${snapshot.nextWavePreview.basic} R:${snapshot.nextWavePreview.runner} Br:${snapshot.nextWavePreview.brute} Sh:${snapshot.nextWavePreview.shield})`,
-    waveRect.x + 10,
-    waveRect.y + 34,
-  );
-  ctx.fillText(`Boss: ${snapshot.nextWavePreview.bossName}`, waveRect.x + 10, waveRect.y + 66);
+  drawSidebarInfo(ctx, snapshot, runtime.speedMultiplier, mode);
+  drawSidebarWavePreview(ctx, snapshot, mode);
 
   for (let i = 0; i < TOWER_ORDER.length; i += 1) {
     const tower = TOWER_ORDER[i];
     const stats = TOWER_TYPES[tower];
-    const card = towerCardRect(i, TOWER_ORDER.length);
+    const card = towerCardRect(i, TOWER_ORDER.length, mode);
 
     const unlocked = snapshot.level >= stats.unlock;
     const affordable = snapshot.money >= stats.cost;
     const selected = snapshot.selectedTowerName === tower;
+    const hovered = pointInRect(runtime.pointerWorld, card);
 
-    const fill = selected ? "#355a82" : unlocked ? "#24384d" : "#2f3033";
-    const border = selected ? "#9fd0ff" : rgb(stats.color);
-
-    roundRect(ctx, card, 12, fill, border, 2);
-
-    ctx.fillStyle = "#f3f7ff";
-    ctx.font = "700 23px Arial";
-    ctx.fillText(tower, card.x + 10, card.y + 28);
-
-    ctx.fillStyle = affordable ? "#c5f5d2" : "#ffc4c4";
-    ctx.font = "600 18px Arial";
-    ctx.fillText(`Cost ${stats.cost}`, card.x + 10, card.y + 53);
-
-    ctx.fillStyle = "#d6e5f8";
-    ctx.fillText(`DMG ${Math.round(stats.damage)}  RNG ${Math.round(stats.range)}`, card.x + 10, card.y + 76);
-
-    ctx.fillStyle = "#a9c0d8";
-    ctx.font = "500 16px Arial";
-    ctx.fillText(TOWER_DESCRIPTIONS[tower], card.x + 10, card.y + 98);
-
-    if (!unlocked) {
-      ctx.fillStyle = "#ffdd8d";
-      ctx.fillText(`Unlock at level ${stats.unlock}`, card.x + 10, card.y + 118);
+    if (mode === "compact") {
+      drawCompactTowerCard(ctx, card, tower, unlocked, affordable, selected, hovered);
+      const infoRect = towerInfoButtonRect(card, mode);
+      drawCompactInfoButton(ctx, infoRect, tower, runtime.tooltipState, hovered);
+      hitAreas.towerInfoButtons.push({ tower, rect: infoRect });
+    } else {
+      drawDesktopTowerCard(ctx, card, tower, unlocked, affordable, selected, hovered);
     }
 
     hitAreas.towerCards.push({ tower, rect: card });
   }
 
-  ctx.fillStyle = "#94aec9";
-  ctx.font = "500 15px Arial";
-  ctx.textAlign = "left";
-  ctx.fillText("Controls: [1-5] Tower  [Space] Wave  [R] Restart", FIELD_W + 30, SCREEN_H - 148);
-  ctx.fillText("[Ctrl +] Faster  [Ctrl -] Slower  [Esc/Right Click] Clear  [M] Menu", FIELD_W + 30, SCREEN_H - 126);
+  drawSidebarControls(ctx, mode);
 
-  const startWaveRect: Rect = {
-    x: FIELD_W + 30,
-    y: SCREEN_H - 106,
-    w: SIDEBAR_W - 60,
-    h: 62,
-  };
-
+  const startWaveRect = startWaveButtonRect(mode);
   const canStart = !snapshot.waveActive && snapshot.wavePlan.length === 0;
+  const hoveredStart = pointInRect(runtime.pointerWorld, startWaveRect);
+
   roundRect(
     ctx,
     startWaveRect,
     12,
-    canStart ? "#1f8c58" : "#355572",
+    canStart ? (hoveredStart ? "#25a668" : "#1f8c58") : hoveredStart ? "#43688a" : "#355572",
     canStart ? "#b4ffd9" : "#7398bc",
     2,
   );
   ctx.fillStyle = "#f2f7ff";
-  ctx.font = "700 28px Arial";
+  ctx.font = mode === "compact" ? "700 23px Arial" : "700 28px Arial";
   ctx.textAlign = "center";
   ctx.fillText(
     canStart ? "Start Wave" : `Wave Running (${snapshot.spawnedThisWave}/${snapshot.totalWaveEnemies})`,
     startWaveRect.x + startWaveRect.w * 0.5,
-    startWaveRect.y + 40,
+    startWaveRect.y + (mode === "compact" ? 38 : 40),
   );
 
   hitAreas.startWaveButton = startWaveRect;
+}
+
+function drawSidebarInfo(
+  ctx: CanvasRenderingContext2D,
+  snapshot: GameSnapshot,
+  speedMultiplier: number,
+  mode: ResponsiveUIMode,
+): void {
+  const layout = getSidebarLayoutConfig(mode);
+  const infoRect = sidebarInfoRect(mode);
+  roundRect(ctx, infoRect, 14, "#223548", "#4b6988", 2);
+
+  const selectedTower = snapshot.selectedTowerName ? TOWER_TYPES[snapshot.selectedTowerName] : null;
+  const selectedDps = selectedTower ? `${formatTowerDps(selectedTower)} DPS` : "-";
+
+  const lineX = infoRect.x + 14;
+  const yStep = mode === "compact" ? 24 : 30;
+  const yStart = infoRect.y + (mode === "compact" ? 30 : 36);
+
+  drawInfoLine(ctx, "Difficulty", difficultyLabel(snapshot.difficultyName), lineX, yStart, layout.infoValueOffset, mode);
+  drawInfoLine(
+    ctx,
+    "Level",
+    `${Math.min(snapshot.level, snapshot.maxLevel)}/${snapshot.maxLevel}`,
+    lineX,
+    yStart + yStep,
+    layout.infoValueOffset,
+    mode,
+  );
+  drawInfoLine(ctx, "Lives", `${snapshot.lives}`, lineX, yStart + yStep * 2, layout.infoValueOffset, mode);
+  drawInfoLine(ctx, "Money", `${snapshot.money}`, lineX, yStart + yStep * 3, layout.infoValueOffset, mode);
+  drawInfoLine(
+    ctx,
+    "Selected",
+    snapshot.selectedTowerName ?? "None",
+    lineX,
+    yStart + yStep * 4,
+    layout.infoValueOffset,
+    mode,
+  );
+  drawInfoLine(ctx, "DPS", selectedDps, lineX, yStart + yStep * 5, layout.infoValueOffset, mode);
+  drawInfoLine(
+    ctx,
+    "Speed",
+    `${speedMultiplier.toFixed(1)}x`,
+    lineX,
+    yStart + yStep * 6,
+    layout.infoValueOffset,
+    mode,
+  );
+}
+
+function drawSidebarWavePreview(
+  ctx: CanvasRenderingContext2D,
+  snapshot: GameSnapshot,
+  mode: ResponsiveUIMode,
+): void {
+  const waveRect = sidebarWaveRect(mode);
+  roundRect(ctx, waveRect, 12, "#233244", "#4b6887", 2);
+
+  ctx.fillStyle = "#dce8f7";
+  ctx.font = mode === "compact" ? "600 19px Arial" : "600 21px Arial";
+  ctx.fillText(
+    `Next ${snapshot.nextWavePreview.count} | B:${snapshot.nextWavePreview.basic} R:${snapshot.nextWavePreview.runner} Br:${snapshot.nextWavePreview.brute} Sh:${snapshot.nextWavePreview.shield}`,
+    waveRect.x + 10,
+    waveRect.y + (mode === "compact" ? 32 : 34),
+  );
+  ctx.fillText(
+    `Boss: ${snapshot.nextWavePreview.bossName}`,
+    waveRect.x + 10,
+    waveRect.y + (mode === "compact" ? 60 : 66),
+  );
+}
+
+function drawDesktopTowerCard(
+  ctx: CanvasRenderingContext2D,
+  card: Rect,
+  tower: TowerName,
+  unlocked: boolean,
+  affordable: boolean,
+  selected: boolean,
+  hovered: boolean,
+): void {
+  const stats = TOWER_TYPES[tower];
+
+  const base = !unlocked ? "#30343a" : affordable ? "#24394f" : "#3c2f36";
+  const hover = !unlocked ? "#353a42" : affordable ? "#2b4863" : "#4b3a45";
+
+  let fill = hovered ? hover : base;
+  if (selected) {
+    fill = hovered ? "#3f6d98" : "#365f86";
+  }
+
+  const border = selected ? "#b6deff" : !unlocked ? "#6a727b" : affordable ? rgb(stats.color) : "#c68f9b";
+
+  roundRect(ctx, card, 12, fill, border, selected ? 3 : 2);
+
+  const iconCenter = { x: card.x + 28, y: card.y + 32 };
+  drawTowerGlyph(ctx, iconCenter, 16, stats.color, TOWER_ICON_LABELS[tower]);
+
+  ctx.fillStyle = "#f3f7ff";
+  ctx.font = "700 22px Arial";
+  ctx.textAlign = "left";
+  ctx.fillText(tower, card.x + 56, card.y + 28);
+
+  ctx.fillStyle = affordable ? "#c5f5d2" : "#ffc4c4";
+  ctx.font = "600 18px Arial";
+  ctx.fillText(`Cost ${stats.cost}`, card.x + 10, card.y + 56);
+
+  ctx.fillStyle = "#d6e5f8";
+  ctx.fillText(`DPS ${formatTowerDps(stats)}  RNG ${Math.round(stats.range)}`, card.x + 10, card.y + 80);
+
+  ctx.fillStyle = "#a9c0d8";
+  ctx.font = "500 16px Arial";
+  ctx.fillText(TOWER_DESCRIPTIONS[tower], card.x + 10, card.y + 102);
+
+  if (!unlocked) {
+    ctx.fillStyle = "#ffdd8d";
+    ctx.fillText(`Unlock at level ${stats.unlock}`, card.x + 10, card.y + 122);
+  }
+}
+
+function drawCompactTowerCard(
+  ctx: CanvasRenderingContext2D,
+  card: Rect,
+  tower: TowerName,
+  unlocked: boolean,
+  affordable: boolean,
+  selected: boolean,
+  hovered: boolean,
+): void {
+  const stats = TOWER_TYPES[tower];
+  const shortLabel = TOWER_SHORT_LABELS[tower];
+
+  const base = !unlocked ? "#2f3338" : affordable ? "#203245" : "#3a2d33";
+  const hover = !unlocked ? "#353b42" : affordable ? "#2a4560" : "#4a3a44";
+  let fill = hovered ? hover : base;
+  if (selected) {
+    fill = hovered ? "#3f6f9b" : "#356086";
+  }
+
+  const border = selected ? "#bde2ff" : !unlocked ? "#6b737b" : affordable ? rgb(stats.color) : "#c9929f";
+
+  roundRect(ctx, card, 14, fill, border, selected ? 3 : 2);
+
+  drawTowerGlyph(ctx, { x: card.x + 24, y: card.y + 28 }, 15, stats.color, TOWER_ICON_LABELS[tower]);
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#f0f6ff";
+  ctx.font = "700 18px Arial";
+  ctx.fillText(shortLabel, card.x + 46, card.y + 24);
+
+  ctx.fillStyle = affordable ? "#c6f4d4" : "#ffbec1";
+  ctx.font = "600 17px Arial";
+  ctx.fillText(`${stats.cost}`, card.x + 10, card.y + 56);
+
+  ctx.fillStyle = "#dbe7f9";
+  ctx.fillText(`${formatTowerDps(stats)} DPS`, card.x + 10, card.y + 82);
+
+  ctx.fillStyle = "#9eb9d6";
+  ctx.font = "500 14px Arial";
+  ctx.fillText(`RNG ${Math.round(stats.range)}`, card.x + 10, card.y + 104);
+
+  if (!unlocked) {
+    ctx.fillStyle = "rgba(22, 24, 28, 0.68)";
+    roundRect(ctx, { x: card.x + 6, y: card.y + card.h - 28, w: card.w - 12, h: 22 }, 8, "rgba(14,18,23,0.74)");
+    ctx.fillStyle = "#ffdd8d";
+    ctx.font = "600 13px Arial";
+    ctx.fillText(`Unlock L${stats.unlock}`, card.x + 12, card.y + card.h - 12);
+  }
+}
+
+function drawCompactInfoButton(
+  ctx: CanvasRenderingContext2D,
+  rect: Rect,
+  tower: TowerName,
+  tooltipState: TowerTooltipRenderState | null,
+  hovered: boolean,
+): void {
+  const active = tooltipState?.tower === tower && tooltipState.source === "touch";
+  const fill = active ? "#4a8de2" : hovered ? "#385674" : "#2d445c";
+  const stroke = active ? "#d4e8ff" : "#9fb9d3";
+
+  roundRect(ctx, rect, 9, fill, stroke, 2);
+  ctx.fillStyle = "#f2f8ff";
+  ctx.font = "700 18px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText("i", rect.x + rect.w * 0.5, rect.y + rect.h * 0.68);
+}
+
+function drawSidebarControls(ctx: CanvasRenderingContext2D, mode: ResponsiveUIMode): void {
+  const layout = getSidebarLayoutConfig(mode);
+
+  ctx.fillStyle = "#9ab4ce";
+  ctx.font = mode === "compact" ? "500 14px Arial" : "500 15px Arial";
+  ctx.textAlign = "left";
+
+  if (mode === "compact") {
+    ctx.fillText("Tap card to buy, tap i for details", FIELD_W + 26, layout.controlsPrimaryY);
+    ctx.fillText("[1-5] Tower  [Space] Wave  [Ctrl +/-] Speed  [Esc] Clear", FIELD_W + 26, layout.controlsSecondaryY);
+    return;
+  }
+
+  ctx.fillText("Controls: [1-5] Tower  [Space] Wave  [R] Restart", FIELD_W + 30, layout.controlsPrimaryY);
+  ctx.fillText("[Ctrl +] Faster  [Ctrl -] Slower  [Esc/Right Click] Clear  [M] Menu", FIELD_W + 30, layout.controlsSecondaryY);
+}
+
+function drawCompactTowerTooltip(
+  ctx: CanvasRenderingContext2D,
+  tooltipState: TowerTooltipRenderState,
+): void {
+  const tower = tooltipState.tower;
+  const stats = TOWER_TYPES[tower];
+  const tooltipSize = { w: 340, h: 170 };
+  const pos = resolveTooltipPlacement(
+    tooltipState.anchor,
+    { x: 0, y: 0, w: SCREEN_W, h: SCREEN_H },
+    tooltipSize,
+    { margin: 16, offset: 14, preferAbove: true },
+  );
+
+  roundRect(ctx, { x: pos.x, y: pos.y, w: tooltipSize.w, h: tooltipSize.h }, 14, "rgba(11, 17, 26, 0.97)", "#79a4cf", 2);
+
+  drawTowerGlyph(ctx, { x: pos.x + 22, y: pos.y + 28 }, 16, stats.color, TOWER_ICON_LABELS[tower]);
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#f0f6ff";
+  ctx.font = "700 22px Arial";
+  ctx.fillText(tower, pos.x + 46, pos.y + 30);
+
+  ctx.fillStyle = "#cde2f8";
+  ctx.font = "600 17px Arial";
+  ctx.fillText(`Cost ${stats.cost}`, pos.x + 16, pos.y + 60);
+  ctx.fillText(`DPS ${formatTowerDps(stats)}`, pos.x + 136, pos.y + 60);
+  ctx.fillText(`Range ${Math.round(stats.range)}`, pos.x + 248, pos.y + 60);
+
+  ctx.fillStyle = "#a8c3de";
+  ctx.font = "500 16px Arial";
+  ctx.fillText(TOWER_DESCRIPTIONS[tower], pos.x + 16, pos.y + 92);
+
+  ctx.fillStyle = "#9fc0df";
+  ctx.font = "500 15px Arial";
+  ctx.fillText(`Special: ${towerSpecialText(tower)}`, pos.x + 16, pos.y + 120);
+
+  ctx.fillStyle = "#89aac8";
+  ctx.font = "500 14px Arial";
+  ctx.fillText(tooltipState.source === "touch" ? "Tap i again to close" : "Hover tooltip", pos.x + 16, pos.y + 148);
+}
+
+function towerSpecialText(tower: TowerName): string {
+  const stats = TOWER_TYPES[tower];
+
+  if (tower === "Stunner") {
+    const slow = stats.slowFactor ? Math.round((1 - stats.slowFactor) * 100) : 0;
+    return `Slow ${slow}% for ${stats.slowDuration?.toFixed(1) ?? "0.0"}s`;
+  }
+  if (tower === "Bombarman") {
+    return `Splash radius ${Math.round(stats.splashRadius ?? 0)}`;
+  }
+  if (tower === "Panzer-Tower") {
+    return `Heavy cannon splash ${Math.round(stats.splashRadius ?? 0)}`;
+  }
+  if (tower === "Scharfschuetze") {
+    return "Long-range precision shots";
+  }
+
+  return "Reliable single target fire";
+}
+
+function drawTowerGlyph(
+  ctx: CanvasRenderingContext2D,
+  center: Point,
+  radius: number,
+  color: [number, number, number],
+  label: string,
+): void {
+  ctx.fillStyle = "#111821";
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius + 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = rgb(color);
+  ctx.beginPath();
+  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#f1f6ff";
+  ctx.font = "700 14px Arial";
+  ctx.textAlign = "center";
+  ctx.fillText(label, center.x, center.y + 5);
 }
 
 function drawEndOverlay(
   ctx: CanvasRenderingContext2D,
   screen: PrototypeScreen,
   hitAreas: RenderHitAreas,
+  pointerWorld: Point,
 ): void {
   ctx.fillStyle = "rgba(8, 12, 18, 0.72)";
   ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
@@ -608,8 +927,11 @@ function drawEndOverlay(
   const restartButton: Rect = { x: panel.x + 90, y: panel.y + 230, w: 240, h: 72 };
   const menuButton: Rect = { x: panel.x + panel.w - 330, y: panel.y + 230, w: 240, h: 72 };
 
-  roundRect(ctx, restartButton, 12, "#236ed8", "#c5deff", 2);
-  roundRect(ctx, menuButton, 12, "#3e4a59", "#c5deff", 2);
+  const restartHovered = pointInRect(pointerWorld, restartButton);
+  const menuHovered = pointInRect(pointerWorld, menuButton);
+
+  roundRect(ctx, restartButton, 12, restartHovered ? "#3280f3" : "#236ed8", "#c5deff", 2);
+  roundRect(ctx, menuButton, 12, menuHovered ? "#536171" : "#3e4a59", "#c5deff", 2);
 
   ctx.fillStyle = "#ffffff";
   ctx.font = "700 30px Arial";
@@ -640,15 +962,17 @@ function drawInfoLine(
   value: string,
   x: number,
   y: number,
+  valueOffset: number,
+  mode: ResponsiveUIMode,
 ): void {
   ctx.textAlign = "left";
   ctx.fillStyle = "#9cb5cd";
-  ctx.font = "500 18px Arial";
+  ctx.font = mode === "compact" ? "500 16px Arial" : "500 18px Arial";
   ctx.fillText(`${label}:`, x, y);
 
   ctx.fillStyle = "#f1f7ff";
-  ctx.font = "700 22px Arial";
-  ctx.fillText(value, x + 144, y);
+  ctx.font = mode === "compact" ? "700 19px Arial" : "700 22px Arial";
+  ctx.fillText(value, x + valueOffset, y);
 }
 
 function drawGameIconBadge(

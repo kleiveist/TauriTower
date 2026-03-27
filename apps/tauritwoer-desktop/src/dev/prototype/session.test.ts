@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createGameSession } from "./index";
+import { TOWER_TYPES } from "./data/towers";
 import type { GameSnapshot } from "./types";
 
 function tickUntil(
@@ -22,6 +23,10 @@ function tickUntil(
 }
 
 describe("session flow", () => {
+  it("uses panzer tower cost 1000 for all purchase checks", () => {
+    expect(TOWER_TYPES["Panzer-Tower"].cost).toBe(1000);
+  });
+
   it("clears selected tower after successful placement", () => {
     const session = createGameSession({ seed: 41 });
     session.applyAction({ type: "chooseDifficulty", difficulty: "leicht" });

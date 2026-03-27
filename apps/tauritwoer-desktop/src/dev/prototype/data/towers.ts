@@ -46,7 +46,7 @@ export const TOWER_TYPES: Record<TowerName, TowerStats> = {
   },
   "Panzer-Tower": {
     unlock: 10,
-    cost: 560,
+    cost: 1000,
     range: 290,
     damage: 260,
     cooldown: 0.9,
@@ -81,4 +81,20 @@ export const TOWER_DESCRIPTIONS: Record<TowerName, string> = {
   Stunner: "Slows enemies with every shot",
   Bombarman: "Area damage against groups",
   "Panzer-Tower": "Very expensive, massive cannon power",
+};
+
+export const TOWER_SHORT_LABELS: Record<TowerName, string> = {
+  Pistolman: "Pistol",
+  Scharfschuetze: "Sniper",
+  Stunner: "Stun",
+  Bombarman: "Bomb",
+  "Panzer-Tower": "Panzer",
+};
+
+export const TOWER_ICON_LABELS: Record<TowerName, string> = {
+  Pistolman: "P",
+  Scharfschuetze: "S",
+  Stunner: "Z",
+  Bombarman: "B",
+  "Panzer-Tower": "T",
 };

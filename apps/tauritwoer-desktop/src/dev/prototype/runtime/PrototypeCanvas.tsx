@@ -22,7 +22,7 @@ export function PrototypeCanvas(): JSX.Element {
       const dpr = window.devicePixelRatio || 1;
       const pixelWidth = Math.max(1, Math.floor(rect.width * dpr));
       const pixelHeight = Math.max(1, Math.floor(rect.height * dpr));
-      controller.resize(pixelWidth, pixelHeight);
+      controller.resize(pixelWidth, pixelHeight, rect.width);
     };
 
     const resizeObserver = new ResizeObserver(() => {
