@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import gameIconUrl from "../../../assets/game-icon.png";
 import { BOSS_PROFILES } from "../data/bosses";
 import { DIFFICULTIES, DIFFICULTY_ORDER } from "../data/difficulties";
@@ -123,12 +123,12 @@ interface OverlayCardOptions {
   title: string;
   description?: string;
   heading?: "h1" | "h2";
-  body?: JSX.Element;
-  actions?: JSX.Element;
+  body?: ReactElement;
+  actions?: ReactElement;
   wide?: boolean;
 }
 
-export function PrototypeCanvas(): JSX.Element {
+export function PrototypeCanvas(): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const controllerRef = useRef<ReturnType<typeof createPrototypeController> | null>(null);
   const settingsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -354,7 +354,7 @@ export function PrototypeCanvas(): JSX.Element {
     setSelectedSlotId(remaining[0]?.id ?? null);
   };
 
-  const renderSettings = (variant: "inline" | "floating"): JSX.Element => (
+  const renderSettings = (variant: "inline" | "floating"): ReactElement => (
     <div className={`prototype-card-settings prototype-card-settings--${variant}`} ref={settingsContainerRef}>
       <button
         className={`prototype-settings-btn ${settingsOpen ? "is-open" : ""}`}
@@ -433,7 +433,7 @@ export function PrototypeCanvas(): JSX.Element {
     body,
     actions,
     wide = false,
-  }: OverlayCardOptions): JSX.Element => (
+  }: OverlayCardOptions): ReactElement => (
     <div className={`prototype-overlay-card ${wide ? "prototype-overlay-card--wide" : ""}`}>
       <div className="prototype-overlay-card__header">
         <div className="prototype-overlay-card__header-top">
@@ -447,7 +447,7 @@ export function PrototypeCanvas(): JSX.Element {
     </div>
   );
 
-  const renderStart = (): JSX.Element =>
+  const renderStart = (): ReactElement =>
     renderOverlayCard({
       title: text.start.title,
       description: text.start.description,
@@ -478,7 +478,7 @@ export function PrototypeCanvas(): JSX.Element {
       ),
     });
 
-  const renderModeSelect = (): JSX.Element =>
+  const renderModeSelect = (): ReactElement =>
     renderOverlayCard({
       title: text.mode.title,
       body: (
@@ -507,7 +507,7 @@ export function PrototypeCanvas(): JSX.Element {
       ),
     });
 
-  const renderDifficulty = (): JSX.Element =>
+  const renderDifficulty = (): ReactElement =>
     renderOverlayCard({
       title: text.difficulty.title,
       body: (
@@ -532,7 +532,7 @@ export function PrototypeCanvas(): JSX.Element {
       ),
     });
 
-  const renderMapSelect = (): JSX.Element =>
+  const renderMapSelect = (): ReactElement =>
     renderOverlayCard({
       title: text.map.title,
       body: (
@@ -565,7 +565,7 @@ export function PrototypeCanvas(): JSX.Element {
       ),
     });
 
-  const renderSandbox = (): JSX.Element => {
+  const renderSandbox = (): ReactElement => {
     const selectedSlotValidation = selectedSlot ? slotValidationById.get(selectedSlot.id) : null;
 
     return renderOverlayCard({
@@ -743,7 +743,7 @@ export function PrototypeCanvas(): JSX.Element {
     });
   };
 
-  const overlayContent = (): JSX.Element => {
+  const overlayContent = (): ReactElement => {
     if (menuStage === "start") {
       return renderStart();
     }
