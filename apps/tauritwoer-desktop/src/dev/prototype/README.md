@@ -1,78 +1,89 @@
-# Tower Defense Prototype (Canvas)
+# Tower Defense Prototype
 
-This folder contains a fully playable Canvas-based prototype that runs inside the Tauri desktop frontend.
+This prototype runs inside the Tauri desktop frontend with a hybrid architecture:
+
+- Canvas: battlefield rendering and in-wave gameplay.
+- React DOM overlay: menu flow, mode selection, map selection, and sandbox slot editor.
 
 ## Module Structure
 
 - `data/`
-  - Static balancing/content definitions (difficulty, towers, enemies, bosses, path, constants).
+  - Static balancing and content definitions (difficulty, towers, enemies, bosses, maps, constants).
 - `math/`
-  - Geometry/vector helpers used by simulation and placement checks.
+  - Geometry and vector helpers for simulation and placement checks.
 - `domain/`
-  - Pure gameplay rules: enemy movement, tower targeting, projectile effects, placement validation, wave planning.
+  - Pure gameplay rules: enemies, towers, projectiles, placement, classic waves, sandbox slot planner.
 - `engine/`
-  - `GameSession` orchestration (state, actions, tick order, economy, lives, progression, win/lose).
+  - `GameSession` orchestration and shared game-state flow for classic + sandbox.
 - `runtime/`
-  - Canvas runtime layers:
-    - `controller.ts` input + update loop + menu flow
-    - `renderer.ts` drawing + click-hit regions
-    - `layout.ts` viewport/world mapping + mode-aware sidebar geometry
-    - `ui.ts` responsive breakpoints, tooltip settings, DPS helper, tooltip placement helper
-    - `input.ts` key helpers / selection helpers
-- `*.test.ts`
-  - Deterministic gameplay tests with Vitest.
+  - `controller.ts`: game loop, canvas input, runtime HUD interactions.
+  - `renderer.ts`: canvas drawing and hit-area generation.
+  - `PrototypeCanvas.tsx`: hybrid menu/editor flow and sandbox UI forms.
+  - `layout.ts` / `ui.ts` / `input.ts`: responsive layout, utility helpers, shortcuts.
 
-## Gameplay Flow
+## Game Flow
 
-1. Start screen.
-2. Difficulty selection (`leicht`, `mittel`, `schwer`, `unmoeglich`).
-3. Playing loop:
-   - select tower in sidebar,
-   - place tower on field,
-   - start wave manually (first and optional later),
-   - waves continue with auto-advance after clear.
-4. End state overlay (`victory` or `game_over`) with restart/menu actions.
+`Start -> Mode -> Difficulty -> Map -> (Sandbox Editor) -> Play -> End`
 
-## Responsive Modes and Tooltip Behavior
+- Classic mode uses the existing classic wave planner.
+- Sandbox mode uses user-defined slot configuration.
+- End-state handling (restart/menu) stays in gameplay runtime.
 
-- `desktop` mode for viewport width `> 1200`.
-- `compact` mode for viewport width `<= 1200`.
-- Mode switching is automatic on resize.
-- Compact mode uses icon-focused tower cards with always-visible primary data (name, cost, DPS).
-- Full tower details are shown via tooltip:
-  - mouse hover with short delay,
-  - touch-friendly `i` button tap toggle,
-  - tooltip placement is clamped inside the visible game area.
+## Sandbox Mode
 
-## Difficulty and Wave Formula
+Sandbox uses dynamic editable slots. Each slot defines:
 
-Normal wave enemy count follows exactly:
+- enemy type
+- start round
+- base count
+- multiplier
+- additive increase every 10 rounds
+- boss profile stage (only when enemy type is `boss`)
+- enabled/disabled state
 
-`ceil(level * difficultyMultiplier)`
+Spawn ordering is blockwise by slot order.
 
-Multipliers:
+### Slot Formula
 
-- `leicht`: `1.0`
-- `mittel`: `1.4`
-- `schwer`: `2.0`
-- `unmoeglich`: `2.5`
+Per slot, spawn count is computed in this order:
 
-Boss waves occur every 10 levels (`10, 20, 30, 40, ...`).
+1. Start-round gate (`round >= startRound`)
+2. Additive 10-round growth (`baseCount + addEvery10Rounds * floor(round / 10)`)
+3. Linear multiplier scaling (`1 + (multiplier - 1) * roundsSinceStart`)
+4. Rounded result with non-negative clamp
 
-## Enemy, Boss, and Tower Notes
+This makes the 10-round increment cumulative (for example, round 10, 20, 30 each add another band).
 
-- Normal enemy archetypes: `basic`, `runner`, `brute`, `shield`.
-- `shield` is intentionally distinct: high armor/splash resistance with regeneration.
-- Bosses are profile-driven (`data/bosses.ts`) and scale by stage.
-- Tower damage display uses a consistent DPS formula:
+## Boss Policy in Sandbox
 
-`DPS = damage / cooldown`
+- Bosses are **slot-only** in sandbox mode.
+- No automatic every-10-round boss insertion in sandbox.
+- Boss profile selection is explicit per boss slot.
 
-- `Panzer-Tower` is the late-game power tower and now costs exactly `1000`.
+## Maps
+
+Three map definitions are available:
+
+- `meadow`
+- `canal`
+- `switchback`
+
+Maps are selected before game start and drive:
+
+- enemy path movement
+- spawn start point
+- path rendering
+- tower placement/path clearance checks
+
+## Responsive Behavior
+
+- Desktop mode: viewport width `> 1200`.
+- Compact mode: viewport width `<= 1200`.
+- Breakpoint logic is centralized (`runtime/ui.ts`).
+- Sandbox editor remains usable in both modes (compact stacks cards/forms and keeps touch-safe controls).
 
 ## Known Limits / Extension Points
 
-- Prototype focuses on local play; save/load persistence is not implemented yet.
-- UI uses Canvas rendering only (no production-grade accessibility layer yet).
-- Balancing is data-driven; tweak `data/*.ts` without touching domain/engine code.
-- Runtime can be extended with pause state, upgrades, richer effects, and additional compact interactions without changing core API.
+- Sandbox config persistence is runtime-memory only (no file save/load yet).
+- No preset/import/export pipeline yet.
+- Accessibility and advanced editor affordances can be layered later without changing core engine interfaces.

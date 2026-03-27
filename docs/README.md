@@ -9,6 +9,7 @@ This directory is split by audience and decision type.
 
 - [0001 - Tauri Target Architecture](adr/0001-tauri-target-architecture.md)
 - [0002 - Repository and Tooling Boundaries](adr/0002-repo-tooling-boundaries.md)
+- [0003 - Sandbox / Agent-Box Mode Architecture](adr/0003-sandbox-agent-box-mode.md)
 
 ## Developer Docs
 
@@ -31,4 +32,5 @@ This directory is split by audience and decision type.
 
 - All runtime architecture decisions should reference ADR-0001.
 - All repo-structure and tooling-boundary decisions should reference ADR-0002.
+- Sandbox/agent-box mode and slot-scaling decisions should reference ADR-0003.
 - `tools/control.py` is the canonical operator entrypoint for this repository.

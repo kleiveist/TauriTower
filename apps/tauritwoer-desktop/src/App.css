@@ -14,6 +14,7 @@ body,
 }
 
 .prototype-app-shell {
+  position: relative;
   width: 100vw;
   height: 100vh;
   background:
@@ -28,4 +29,362 @@ body,
   display: block;
   touch-action: none;
   user-select: none;
+}
+
+.prototype-canvas--inactive {
+  pointer-events: none;
+  filter: saturate(0.8) brightness(0.76);
+}
+
+.prototype-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(4, 9, 16, 0.66);
+  backdrop-filter: blur(5px);
+  overflow: auto;
+}
+
+.prototype-overlay-card {
+  width: min(960px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  background: linear-gradient(145deg, rgba(18, 31, 46, 0.97), rgba(13, 24, 36, 0.97));
+  border: 2px solid rgba(128, 170, 214, 0.7);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+}
+
+.prototype-overlay-card--wide {
+  width: min(1200px, 100%);
+}
+
+.prototype-overlay-card h1,
+.prototype-overlay-card h2 {
+  margin: 0 0 12px;
+  color: #f0f6ff;
+}
+
+.prototype-overlay-card p {
+  margin: 0 0 14px;
+  color: #c6d9ef;
+}
+
+.prototype-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 10px 0 18px;
+}
+
+.prototype-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  text-align: left;
+  border: 2px solid #4a698a;
+  border-radius: 14px;
+  background: rgba(26, 42, 60, 0.85);
+  color: #e4efff;
+  padding: 14px;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.prototype-choice:hover {
+  transform: translateY(-1px);
+  border-color: #8eb6df;
+  background: rgba(34, 57, 80, 0.88);
+}
+
+.prototype-choice.is-selected {
+  border-color: #9dd2ff;
+  background: rgba(48, 83, 119, 0.9);
+}
+
+.prototype-list-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 10px 0 18px;
+}
+
+.prototype-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 2px solid #4a698a;
+  border-radius: 12px;
+  background: rgba(27, 44, 61, 0.9);
+  color: #e4efff;
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prototype-list-item.is-selected {
+  border-color: #9dd2ff;
+  background: rgba(47, 79, 112, 0.95);
+}
+
+.prototype-list-item span,
+.prototype-choice span {
+  color: #bbd1e8;
+}
+
+.prototype-overlay-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.prototype-btn {
+  border: 1px solid #6f90b3;
+  border-radius: 10px;
+  background: #23384f;
+  color: #f0f6ff;
+  padding: 10px 16px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.prototype-btn:hover {
+  background: #2c4661;
+}
+
+.prototype-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.prototype-btn--primary {
+  border-color: #92c6ff;
+  background: #2f74b8;
+}
+
+.prototype-btn--primary:hover {
+  background: #3b84cd;
+}
+
+.prototype-btn--danger {
+  border-color: #df9292;
+  background: #7f3232;
+}
+
+.prototype-btn--danger:hover {
+  background: #914242;
+}
+
+.prototype-btn--add {
+  width: 100%;
+  border-style: dashed;
+}
+
+.prototype-muted {
+  color: #9fb9d4;
+  font-size: 0.95rem;
+}
+
+.sandbox-layout {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.sandbox-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-content: start;
+}
+
+.sandbox-slot-card {
+  border: 2px solid #4f6f90;
+  border-radius: 12px;
+  background: rgba(21, 36, 51, 0.9);
+  color: #e4efff;
+  text-align: left;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.sandbox-slot-card:hover {
+  border-color: #8cb7e2;
+}
+
+.sandbox-slot-card.is-selected {
+  border-color: #9fd6ff;
+  background: rgba(43, 72, 100, 0.95);
+}
+
+.sandbox-slot-card.is-invalid {
+  border-color: #e59d9d;
+  background: rgba(86, 46, 54, 0.9);
+}
+
+.sandbox-slot-card.is-empty {
+  border-style: dashed;
+  opacity: 0.86;
+}
+
+.sandbox-slot-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.sandbox-slot-body {
+  font-size: 0.82rem;
+  line-height: 1.25;
+  color: #c3d8ef;
+}
+
+.enemy-chip {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 1px solid rgba(230, 240, 255, 0.7);
+}
+
+.enemy-chip--basic {
+  background: #3d7bd1;
+}
+
+.enemy-chip--runner {
+  background: #2da17d;
+}
+
+.enemy-chip--brute {
+  background: #914941;
+}
+
+.enemy-chip--shield {
+  background: #7b7fcb;
+}
+
+.enemy-chip--boss {
+  background: #c68b2c;
+}
+
+.sandbox-editor-panel {
+  border: 2px solid #4f6f90;
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(20, 33, 47, 0.93);
+}
+
+.sandbox-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.sandbox-editor-grid label,
+.sandbox-enabled-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.9rem;
+  color: #dbe9f8;
+}
+
+.sandbox-enabled-toggle {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.sandbox-editor-grid input,
+.sandbox-editor-grid select {
+  border: 1px solid #6d8eb1;
+  border-radius: 8px;
+  background: #162433;
+  color: #eef5ff;
+  padding: 8px;
+  font: inherit;
+}
+
+.sandbox-preview-line {
+  margin: 10px 0;
+  color: #b2c9df;
+  font-size: 0.9rem;
+}
+
+.sandbox-preview-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sandbox-round-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid #506f90;
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(22, 36, 52, 0.85);
+}
+
+.sandbox-round-preview span {
+  color: #c1d7ef;
+  font-size: 0.86rem;
+}
+
+.prototype-errors {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #ffc3c3;
+}
+
+@media (max-width: 1200px) {
+  .prototype-overlay {
+    padding: 12px;
+  }
+
+  .prototype-overlay-card {
+    border-radius: 14px;
+    padding: 14px;
+  }
+
+  .prototype-choice-grid,
+  .prototype-list-grid,
+  .sandbox-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sandbox-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sandbox-slots {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sandbox-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prototype-overlay-actions {
+    justify-content: stretch;
+    flex-wrap: wrap;
+  }
+
+  .prototype-btn {
+    flex: 1 1 180px;
+    min-height: 44px;
+  }
 }

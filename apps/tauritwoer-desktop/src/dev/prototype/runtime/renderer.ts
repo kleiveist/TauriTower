@@ -1,4 +1,5 @@
-import { PATH_POINTS, FIELD_W, GRID_SIZE, PATH_WIDTH, SCREEN_H, SCREEN_W, SIDEBAR_W } from "../data/constants";
+import { FIELD_W, GRID_SIZE, PATH_WIDTH, SCREEN_H, SCREEN_W, SIDEBAR_W } from "../data/constants";
+import { getMapDefinition } from "../data/maps";
 import { DIFFICULTIES, DIFFICULTY_ORDER } from "../data/difficulties";
 import {
   TOWER_DESCRIPTIONS,
@@ -236,7 +237,7 @@ function drawGameScene(
   runtime: RuntimeRenderState,
 ): void {
   drawField(ctx);
-  drawPath(ctx);
+  drawPath(ctx, snapshot.mapId);
   drawTowerPreview(ctx, runtime.towerPreview);
   drawEntities(ctx, snapshot);
   drawSidebar(ctx, snapshot, hitAreas, runtime);
@@ -269,25 +270,30 @@ function drawField(ctx: CanvasRenderingContext2D): void {
   }
 }
 
-function drawPath(ctx: CanvasRenderingContext2D): void {
+function drawPath(ctx: CanvasRenderingContext2D, mapId: GameSnapshot["mapId"]): void {
+  const pathPoints = getMapDefinition(mapId).pathPoints;
+  if (pathPoints.length < 2) {
+    return;
+  }
+
   ctx.strokeStyle = "#cbb37a";
   ctx.lineWidth = PATH_WIDTH;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
   ctx.beginPath();
-  ctx.moveTo(PATH_POINTS[0].x, PATH_POINTS[0].y);
-  for (let i = 1; i < PATH_POINTS.length; i += 1) {
-    ctx.lineTo(PATH_POINTS[i].x, PATH_POINTS[i].y);
+  ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
+  for (let i = 1; i < pathPoints.length; i += 1) {
+    ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
   }
   ctx.stroke();
 
   ctx.strokeStyle = "#7f6a3f";
   ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.moveTo(PATH_POINTS[0].x, PATH_POINTS[0].y);
-  for (let i = 1; i < PATH_POINTS.length; i += 1) {
-    ctx.lineTo(PATH_POINTS[i].x, PATH_POINTS[i].y);
+  ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
+  for (let i = 1; i < pathPoints.length; i += 1) {
+    ctx.lineTo(pathPoints[i].x, pathPoints[i].y);
   }
   ctx.stroke();
 }
@@ -624,40 +630,50 @@ function drawSidebarInfo(
   roundRect(ctx, infoRect, 14, "#223548", "#4b6988", 2);
 
   const selectedTower = snapshot.selectedTowerName ? TOWER_TYPES[snapshot.selectedTowerName] : null;
-  const selectedDps = selectedTower ? `${formatTowerDps(selectedTower)} DPS` : "-";
+  const selectedDps = selectedTower ? formatTowerDps(selectedTower) + " DPS" : "-";
+  const mapLabel = getMapDefinition(snapshot.mapId).shortLabel;
 
   const lineX = infoRect.x + 14;
-  const yStep = mode === "compact" ? 24 : 30;
-  const yStart = infoRect.y + (mode === "compact" ? 30 : 36);
+  const yStep = mode === "compact" ? 22 : 25;
+  const yStart = infoRect.y + (mode === "compact" ? 28 : 34);
 
-  drawInfoLine(ctx, "Difficulty", difficultyLabel(snapshot.difficultyName), lineX, yStart, layout.infoValueOffset, mode);
   drawInfoLine(
     ctx,
-    "Level",
-    `${Math.min(snapshot.level, snapshot.maxLevel)}/${snapshot.maxLevel}`,
+    "Rules",
+    difficultyLabel(snapshot.difficultyName) + " | " + snapshot.mode,
     lineX,
-    yStart + yStep,
+    yStart,
     layout.infoValueOffset,
     mode,
   );
-  drawInfoLine(ctx, "Lives", `${snapshot.lives}`, lineX, yStart + yStep * 2, layout.infoValueOffset, mode);
-  drawInfoLine(ctx, "Money", `${snapshot.money}`, lineX, yStart + yStep * 3, layout.infoValueOffset, mode);
+  drawInfoLine(ctx, "Map", mapLabel, lineX, yStart + yStep, layout.infoValueOffset, mode);
+  drawInfoLine(
+    ctx,
+    "Level",
+    String(Math.min(snapshot.level, snapshot.maxLevel)) + "/" + String(snapshot.maxLevel),
+    lineX,
+    yStart + yStep * 2,
+    layout.infoValueOffset,
+    mode,
+  );
+  drawInfoLine(ctx, "Lives", String(snapshot.lives), lineX, yStart + yStep * 3, layout.infoValueOffset, mode);
+  drawInfoLine(ctx, "Money", String(snapshot.money), lineX, yStart + yStep * 4, layout.infoValueOffset, mode);
   drawInfoLine(
     ctx,
     "Selected",
     snapshot.selectedTowerName ?? "None",
     lineX,
-    yStart + yStep * 4,
+    yStart + yStep * 5,
     layout.infoValueOffset,
     mode,
   );
-  drawInfoLine(ctx, "DPS", selectedDps, lineX, yStart + yStep * 5, layout.infoValueOffset, mode);
+  drawInfoLine(ctx, "DPS", selectedDps, lineX, yStart + yStep * 6, layout.infoValueOffset, mode);
   drawInfoLine(
     ctx,
     "Speed",
-    `${speedMultiplier.toFixed(1)}x`,
+    speedMultiplier.toFixed(1) + "x",
     lineX,
-    yStart + yStep * 6,
+    yStart + yStep * 7,
     layout.infoValueOffset,
     mode,
   );

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createGameSession } from "./index";
 import { TOWER_TYPES } from "./data/towers";
-import type { GameSnapshot } from "./types";
+import { createSandboxSlot } from "./domain/sandbox";
+import type { GameSnapshot, SandboxConfig } from "./types";
 
 function tickUntil(
   getSnapshot: () => GameSnapshot,
@@ -49,6 +50,54 @@ describe("session flow", () => {
     const snapshot = session.getSnapshot();
     expect(snapshot.towers).toHaveLength(0);
     expect(snapshot.selectedTowerName).toBe("Pistolman");
+  });
+
+  it("uses sandbox slots for wave planning when mode is sandbox", () => {
+    const session = createGameSession({ seed: 73 });
+    const sandboxConfig: SandboxConfig = {
+      slots: [
+        {
+          ...createSandboxSlot("slot-1"),
+          enemyType: "runner",
+          baseCount: 3,
+          addEvery10Rounds: 0,
+          multiplier: 1,
+          startRound: 1,
+          enabled: true,
+        },
+      ],
+    };
+
+    session.applyAction({
+      type: "chooseDifficulty",
+      difficulty: "leicht",
+      mode: "sandbox",
+      mapId: "canal",
+      sandboxConfig,
+    });
+    session.applyAction({ type: "startWave" });
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.mode).toBe("sandbox");
+    expect(snapshot.mapId).toBe("canal");
+    expect(snapshot.totalWaveEnemies).toBe(3);
+    expect(snapshot.wavePlan).toEqual(["runner", "runner", "runner"]);
+  });
+
+  it("spawns enemies at the selected map path", () => {
+    const session = createGameSession({ seed: 74 });
+    session.applyAction({
+      type: "chooseDifficulty",
+      difficulty: "leicht",
+      mode: "classic",
+      mapId: "canal",
+    });
+    session.applyAction({ type: "startWave" });
+    session.tick(0.09);
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.enemies.length).toBeGreaterThan(0);
+    expect(snapshot.enemies[0].pos.y).toBeCloseTo(300, 5);
   });
 
   it("progresses to the next level and grants wave completion bonus", () => {

@@ -1,6 +1,10 @@
 export type GameState = "menu" | "playing" | "game_over" | "victory";
 
+export type GameMode = "classic" | "sandbox";
+
 export type DifficultyName = "leicht" | "mittel" | "schwer" | "unmoeglich";
+
+export type MapId = "meadow" | "canal" | "switchback";
 
 export type TowerName =
   | "Pistolman"
@@ -26,6 +30,8 @@ export type BossShape =
   | "skull";
 
 export type SpawnKey = "basic" | "runner" | "brute" | "shield" | `boss_${number}`;
+
+export type SandboxEnemyType = "basic" | "runner" | "brute" | "shield" | "boss";
 
 export type ColorRgb = [number, number, number];
 
@@ -87,6 +93,35 @@ export interface BossProfile {
   lifeDamage: number;
 }
 
+export interface MapDefinition {
+  id: MapId;
+  name: string;
+  shortLabel: string;
+  description: string;
+  pathPoints: Point[];
+  accent: ColorRgb;
+}
+
+export interface SandboxSlot {
+  id: string;
+  enemyType: SandboxEnemyType;
+  bossStage: number;
+  startRound: number;
+  baseCount: number;
+  multiplier: number;
+  addEvery10Rounds: number;
+  enabled: boolean;
+}
+
+export interface SandboxConfig {
+  slots: SandboxSlot[];
+}
+
+export interface SandboxSlotValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
 export interface EnemySnapshot {
   id: number;
   pos: Point;
@@ -145,6 +180,8 @@ export interface WavePreview {
 
 export interface GameSnapshot {
   state: GameState;
+  mode: GameMode;
+  mapId: MapId;
   difficultyName: DifficultyName;
   level: number;
   maxLevel: number;
@@ -164,6 +201,7 @@ export interface GameSnapshot {
   enemies: EnemySnapshot[];
   bullets: BulletSnapshot[];
   nextWavePreview: WavePreview;
+  sandboxConfig: SandboxConfig;
 }
 
 export interface Rng {
@@ -172,6 +210,9 @@ export interface Rng {
 
 export interface ResetOptions {
   maxLevelOverride?: number;
+  mode?: GameMode;
+  mapId?: MapId;
+  sandboxConfig?: SandboxConfig;
 }
 
 export interface GameSessionOptions extends ResetOptions {
@@ -181,13 +222,22 @@ export interface GameSessionOptions extends ResetOptions {
 }
 
 export type GameAction =
-  | { type: "chooseDifficulty"; difficulty: DifficultyName }
+  | {
+      type: "chooseDifficulty";
+      difficulty: DifficultyName;
+      mode?: GameMode;
+      mapId?: MapId;
+      sandboxConfig?: SandboxConfig;
+    }
   | { type: "startWave" }
   | { type: "selectTower"; tower: TowerName }
   | { type: "clearSelection" }
   | { type: "placeTower"; position: Point }
   | { type: "restart" }
-  | { type: "returnToMenu" };
+  | { type: "returnToMenu" }
+  | { type: "setSandboxConfig"; config: SandboxConfig }
+  | { type: "setMap"; mapId: MapId }
+  | { type: "setMode"; mode: GameMode };
 
 export interface GameSession {
   tick(dtSeconds: number): void;

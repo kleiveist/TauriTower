@@ -1,10 +1,16 @@
 import { BOSS_PROFILES } from "../data/bosses";
-import { PATH_POINTS } from "../data/constants";
+import { DEFAULT_MAP_ID, getMapDefinition } from "../data/maps";
 import { DIFFICULTIES } from "../data/difficulties";
 import { ENEMY_ARCHETYPES } from "../data/enemies";
 import { TOWER_TYPES } from "../data/towers";
 import { updateBullet } from "../domain/bullet";
 import { updateEnemy } from "../domain/enemy";
+import {
+  buildSandboxWavePlan,
+  cloneSandboxConfig,
+  createDefaultSandboxConfig,
+  previewSandboxWaveInfo,
+} from "../domain/sandbox";
 import { validTowerPosition } from "../domain/placement";
 import { updateTower } from "../domain/tower";
 import { bossStageFromSpawnKey, buildWavePlan, previewWaveInfo } from "../domain/waves";
@@ -13,10 +19,13 @@ import type {
   DifficultyName,
   DifficultyProfile,
   GameAction,
+  GameMode,
   GameSession,
   GameSessionOptions,
   GameSnapshot,
+  MapId,
   ResetOptions,
+  SandboxConfig,
   SpawnKey,
   TowerName,
 } from "../types";
@@ -49,21 +58,31 @@ class GameSessionImpl implements GameSession {
     const difficultyName = options.initialDifficulty ?? "leicht";
     const difficulty = DIFFICULTIES[difficultyName];
 
+    const mode = options.mode ?? "classic";
+    const mapId = options.mapId ?? DEFAULT_MAP_ID;
+    const sandboxConfig = options.sandboxConfig
+      ? cloneSandboxConfig(options.sandboxConfig)
+      : createDefaultSandboxConfig();
+
     this.state = {
       difficulty,
-      snapshot: createInitialSnapshot(
-        "menu",
-        difficultyName,
-        difficulty,
-        options.maxLevelOverride,
-      ),
+      snapshot: createInitialSnapshot("menu", difficultyName, difficulty, {
+        maxLevelOverride: options.maxLevelOverride,
+        mode,
+        mapId,
+        sandboxConfig,
+      }),
       nextEnemyId: 1,
       nextTowerId: 1,
       nextBulletId: 1,
     };
 
     if (options.initialDifficulty) {
-      this.reset(options.initialDifficulty);
+      this.reset(options.initialDifficulty, {
+        mode,
+        mapId,
+        sandboxConfig,
+      });
     }
   }
 
@@ -71,9 +90,19 @@ class GameSessionImpl implements GameSession {
     const difficulty = DIFFICULTIES[difficultyName];
     const maxLevel = options?.maxLevelOverride ?? this.defaultMaxLevelOverride ?? difficulty.maxLevel;
 
+    const previous = this.state.snapshot;
+    const mode = options?.mode ?? previous.mode;
+    const mapId = options?.mapId ?? previous.mapId;
+    const sandboxConfig = options?.sandboxConfig
+      ? cloneSandboxConfig(options.sandboxConfig)
+      : cloneSandboxConfig(previous.sandboxConfig);
+
     this.state.difficulty = difficulty;
     this.state.snapshot = {
       state: "playing",
+      mode,
+      mapId,
+      sandboxConfig,
       difficultyName,
       level: 1,
       maxLevel,
@@ -92,7 +121,7 @@ class GameSessionImpl implements GameSession {
       currentWaveBossName: "",
       message: "Space starts the first wave",
       messageTimer: 4.0,
-      nextWavePreview: previewWaveInfo(1, difficulty),
+      nextWavePreview: this.previewFor(1, mode, difficulty, sandboxConfig),
     };
 
     this.state.nextEnemyId = 1;
@@ -104,7 +133,23 @@ class GameSessionImpl implements GameSession {
   applyAction(action: GameAction): void {
     switch (action.type) {
       case "chooseDifficulty": {
-        this.reset(action.difficulty);
+        this.reset(action.difficulty, {
+          mode: action.mode ?? this.state.snapshot.mode,
+          mapId: action.mapId ?? this.state.snapshot.mapId,
+          sandboxConfig: action.sandboxConfig ?? this.state.snapshot.sandboxConfig,
+        });
+        break;
+      }
+      case "setMode": {
+        this.state.snapshot.mode = action.mode;
+        break;
+      }
+      case "setMap": {
+        this.state.snapshot.mapId = action.mapId;
+        break;
+      }
+      case "setSandboxConfig": {
+        this.state.snapshot.sandboxConfig = cloneSandboxConfig(action.config);
         break;
       }
       case "startWave": {
@@ -132,7 +177,11 @@ class GameSessionImpl implements GameSession {
       }
       case "restart": {
         if (this.state.snapshot.state !== "menu") {
-          this.reset(this.state.snapshot.difficultyName);
+          this.reset(this.state.snapshot.difficultyName, {
+            mode: this.state.snapshot.mode,
+            mapId: this.state.snapshot.mapId,
+            sandboxConfig: this.state.snapshot.sandboxConfig,
+          });
         }
         break;
       }
@@ -184,8 +233,10 @@ class GameSessionImpl implements GameSession {
       }
     }
 
+    const pathPoints = getMapDefinition(snapshot.mapId).pathPoints;
+
     for (const enemy of snapshot.enemies) {
-      updateEnemy(enemy, dtSeconds, PATH_POINTS);
+      updateEnemy(enemy, dtSeconds, pathPoints);
       if (enemy.reachedEnd && !enemy.dead) {
         enemy.dead = true;
         snapshot.lives -= enemy.lifeDamage;
@@ -249,6 +300,9 @@ class GameSessionImpl implements GameSession {
 
     return {
       state: source.state,
+      mode: source.mode,
+      mapId: source.mapId,
+      sandboxConfig: cloneSandboxConfig(source.sandboxConfig),
       difficultyName: source.difficultyName,
       level: source.level,
       maxLevel: source.maxLevel,
@@ -282,6 +336,18 @@ class GameSessionImpl implements GameSession {
     };
   }
 
+  private previewFor(
+    level: number,
+    mode: GameMode,
+    difficulty: DifficultyProfile,
+    sandboxConfig: SandboxConfig,
+  ): GameSnapshot["nextWavePreview"] {
+    if (mode === "sandbox") {
+      return previewSandboxWaveInfo(level, sandboxConfig);
+    }
+    return previewWaveInfo(level, difficulty);
+  }
+
   private updateMessageTimer(dtSeconds: number): void {
     const snapshot = this.state.snapshot;
     if (snapshot.messageTimer <= 0) {
@@ -301,9 +367,11 @@ class GameSessionImpl implements GameSession {
   }
 
   private refreshWavePreview(): void {
-    this.state.snapshot.nextWavePreview = previewWaveInfo(
+    this.state.snapshot.nextWavePreview = this.previewFor(
       this.state.snapshot.level,
+      this.state.snapshot.mode,
       this.state.difficulty,
+      this.state.snapshot.sandboxConfig,
     );
   }
 
@@ -316,7 +384,10 @@ class GameSessionImpl implements GameSession {
       return;
     }
 
-    snapshot.wavePlan = buildWavePlan(snapshot.level, this.state.difficulty);
+    snapshot.wavePlan =
+      snapshot.mode === "sandbox"
+        ? buildSandboxWavePlan(snapshot.level, snapshot.sandboxConfig)
+        : buildWavePlan(snapshot.level, this.state.difficulty);
     snapshot.totalWaveEnemies = snapshot.wavePlan.length;
     snapshot.spawnedThisWave = 0;
     snapshot.currentWaveBossName = "";
@@ -331,7 +402,7 @@ class GameSessionImpl implements GameSession {
 
     snapshot.waveActive = true;
     snapshot.spawnInterval = Math.max(0.1, 0.46 - Math.min(snapshot.level, 90) * 0.0025);
-    snapshot.spawnTimer = 0.08;
+    snapshot.spawnTimer = snapshot.wavePlan.length === 0 ? 0 : 0.08;
     const extra = snapshot.currentWaveBossName ? ` + Boss: ${snapshot.currentWaveBossName}` : "";
     this.showMessage(
       `Level ${snapshot.level} started: ${snapshot.totalWaveEnemies} enemies${extra}`,
@@ -344,7 +415,10 @@ class GameSessionImpl implements GameSession {
     const diff = this.state.difficulty;
     const levelFactor = snapshot.level;
 
-    const startPoint = PATH_POINTS[0];
+    const startPoint = getMapDefinition(snapshot.mapId).pathPoints[0];
+    if (!startPoint) {
+      return;
+    }
 
     const bossStage = bossStageFromSpawnKey(enemyType);
     if (bossStage) {
@@ -470,7 +544,7 @@ class GameSessionImpl implements GameSession {
     }
 
     const position = { x, y };
-    if (!validTowerPosition(position, snapshot.towers)) {
+    if (!validTowerPosition(position, snapshot.towers, getMapDefinition(snapshot.mapId).pathPoints)) {
       this.showMessage("Tower cannot be placed there", 1.6);
       return;
     }
@@ -491,12 +565,20 @@ function createInitialSnapshot(
   state: GameSnapshot["state"],
   difficultyName: DifficultyName,
   difficulty: DifficultyProfile,
-  maxLevelOverride?: number,
+  options: {
+    maxLevelOverride?: number;
+    mode: GameMode;
+    mapId: MapId;
+    sandboxConfig: SandboxConfig;
+  },
 ): GameSnapshot {
-  const maxLevel = maxLevelOverride ?? difficulty.maxLevel;
+  const maxLevel = options.maxLevelOverride ?? difficulty.maxLevel;
 
   return {
     state,
+    mode: options.mode,
+    mapId: options.mapId,
+    sandboxConfig: cloneSandboxConfig(options.sandboxConfig),
     difficultyName,
     level: 1,
     maxLevel,
@@ -515,7 +597,10 @@ function createInitialSnapshot(
     towers: [],
     enemies: [],
     bullets: [],
-    nextWavePreview: previewWaveInfo(1, difficulty),
+    nextWavePreview:
+      options.mode === "sandbox"
+        ? previewSandboxWaveInfo(1, options.sandboxConfig)
+        : previewWaveInfo(1, difficulty),
   };
 }
 

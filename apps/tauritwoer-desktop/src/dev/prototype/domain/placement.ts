@@ -4,7 +4,11 @@ import { distancePointToSegment } from "../math/geometry";
 import { distanceBetween } from "../math/vector";
 import type { Point, TowerSnapshot } from "../types";
 
-export function validTowerPosition(pos: Point, towers: TowerSnapshot[]): boolean {
+export function validTowerPosition(
+  pos: Point,
+  towers: TowerSnapshot[],
+  pathPoints: Point[] = PATH_POINTS,
+): boolean {
   if (!isWithinPlayableField(pos)) {
     return false;
   }
@@ -15,9 +19,9 @@ export function validTowerPosition(pos: Point, towers: TowerSnapshot[]): boolean
     }
   }
 
-  for (let i = 0; i < PATH_POINTS.length - 1; i += 1) {
-    const a = PATH_POINTS[i];
-    const b = PATH_POINTS[i + 1];
+  for (let i = 0; i < pathPoints.length - 1; i += 1) {
+    const a = pathPoints[i];
+    const b = pathPoints[i + 1];
     if (distancePointToSegment(pos, a, b) <= PATH_WIDTH / 2 + TOWER_RADIUS + 4) {
       return false;
     }

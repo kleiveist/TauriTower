@@ -1,9 +1,19 @@
 import { FIELD_W, FPS } from "../data/constants";
-import { DIFFICULTY_ORDER } from "../data/difficulties";
+import { DEFAULT_MAP_ID, getMapDefinition } from "../data/maps";
 import { TOWER_TYPES } from "../data/towers";
+import { createDefaultSandboxConfig, cloneSandboxConfig } from "../domain/sandbox";
 import { validTowerPosition } from "../domain/placement";
 import { createGameSession } from "../index";
-import type { DifficultyName, GameAction, GameSnapshot, Point, TowerName } from "../types";
+import type {
+  DifficultyName,
+  GameAction,
+  GameMode,
+  GameSnapshot,
+  MapId,
+  Point,
+  SandboxConfig,
+  TowerName,
+} from "../types";
 import {
   decreaseSpeedMultiplier,
   findTaggedRectWithValue,
@@ -26,16 +36,27 @@ const FIXED_STEP = 1 / FPS;
 const MAX_FRAME_DELTA = 0.12;
 const MAX_STEPS_PER_FRAME = 8;
 
+export interface StartGameConfig {
+  difficulty: DifficultyName;
+  mode: GameMode;
+  mapId: MapId;
+  sandboxConfig: SandboxConfig;
+}
+
 export interface PrototypeControllerOptions {
   canvas: HTMLCanvasElement;
   seed?: number;
   iconSrc?: string;
+  onReturnToMenu?: () => void;
 }
 
 export interface PrototypeController {
   start(): void;
   stop(): void;
   resize(pixelWidth: number, pixelHeight: number, viewportWidth?: number): void;
+  setInputEnabled(enabled: boolean): void;
+  startConfiguredGame(config: StartGameConfig): void;
+  getSnapshot(): GameSnapshot;
 }
 
 export function createPrototypeController(options: PrototypeControllerOptions): PrototypeController {
@@ -49,9 +70,11 @@ class PrototypeControllerImpl implements PrototypeController {
 
   private readonly session: ReturnType<typeof createGameSession>;
 
+  private readonly onReturnToMenu?: () => void;
+
   private snapshot: GameSnapshot;
 
-  private uiScreen: "start" | "difficulty" | "playing" = "start";
+  private inputEnabled = false;
 
   private viewport = createViewport(1, 1);
 
@@ -87,7 +110,13 @@ class PrototypeControllerImpl implements PrototypeController {
 
   constructor(options: PrototypeControllerOptions) {
     this.canvas = options.canvas;
-    this.session = createGameSession({ seed: options.seed ?? 20260327 });
+    this.onReturnToMenu = options.onReturnToMenu;
+    this.session = createGameSession({
+      seed: options.seed ?? 20260327,
+      mode: "classic",
+      mapId: DEFAULT_MAP_ID,
+      sandboxConfig: createDefaultSandboxConfig(),
+    });
     this.snapshot = this.session.getSnapshot();
 
     const context = this.canvas.getContext("2d");
@@ -159,8 +188,38 @@ class PrototypeControllerImpl implements PrototypeController {
     this.render();
   }
 
+  setInputEnabled(enabled: boolean): void {
+    if (this.inputEnabled === enabled) {
+      return;
+    }
+
+    this.inputEnabled = enabled;
+    if (!enabled) {
+      this.clearAllTooltips();
+      this.canvas.style.cursor = "default";
+    }
+  }
+
+  startConfiguredGame(config: StartGameConfig): void {
+    this.applyAction({
+      type: "chooseDifficulty",
+      difficulty: config.difficulty,
+      mode: config.mode,
+      mapId: config.mapId,
+      sandboxConfig: cloneSandboxConfig(config.sandboxConfig),
+    });
+    this.resetSpeedMultiplier();
+    this.clearAllTooltips();
+    this.inputEnabled = true;
+    this.render();
+  }
+
+  getSnapshot(): GameSnapshot {
+    return this.snapshot;
+  }
+
   private simulateStep(dtSeconds: number): void {
-    if (this.uiScreen === "start" || this.uiScreen === "difficulty") {
+    if (!this.inputEnabled) {
       return;
     }
 
@@ -192,20 +251,21 @@ class PrototypeControllerImpl implements PrototypeController {
     this.snapshot = this.session.getSnapshot();
   }
 
-  private chooseDifficulty(difficulty: DifficultyName): void {
-    this.applyAction({ type: "chooseDifficulty", difficulty });
-    this.speedMultiplier = 1.0;
-    this.uiScreen = "playing";
-    this.clearAllTooltips();
-  }
-
   private resetSpeedMultiplier(): void {
     this.speedMultiplier = 1.0;
   }
 
+  private returnToMenu(): void {
+    this.applyAction({ type: "returnToMenu" });
+    this.resetSpeedMultiplier();
+    this.inputEnabled = false;
+    this.clearAllTooltips();
+    this.onReturnToMenu?.();
+    this.render();
+  }
+
   private getTowerPreview(): TowerPreviewRenderState | null {
-    const screen = this.getRenderScreen();
-    if (screen !== "playing" || this.snapshot.state !== "playing") {
+    if (!this.inputEnabled || this.snapshot.state !== "playing") {
       return null;
     }
 
@@ -215,9 +275,10 @@ class PrototypeControllerImpl implements PrototypeController {
     }
 
     const stats = TOWER_TYPES[towerName];
+    const pathPoints = getMapDefinition(this.snapshot.mapId).pathPoints;
     const validPlacement =
       this.snapshot.money >= stats.cost &&
-      validTowerPosition(this.pointerWorld, this.snapshot.towers);
+      validTowerPosition(this.pointerWorld, this.snapshot.towers, pathPoints);
 
     return {
       tower: towerName,
@@ -231,13 +292,6 @@ class PrototypeControllerImpl implements PrototypeController {
   }
 
   private getRenderScreen(): PrototypeScreen {
-    if (this.uiScreen === "start") {
-      return "start";
-    }
-    if (this.uiScreen === "difficulty") {
-      return "difficulty";
-    }
-
     if (this.snapshot.state === "game_over") {
       return "game_over";
     }
@@ -284,14 +338,13 @@ class PrototypeControllerImpl implements PrototypeController {
   }
 
   private beginHoverTooltip(worldPoint: Point, nowMs: number): void {
-    if (this.uiMode !== "compact") {
+    if (!this.inputEnabled || this.uiMode !== "compact") {
       this.clearHoverCandidate();
       this.clearTooltipSource("hover");
       return;
     }
 
-    const screen = this.getRenderScreen();
-    if (screen !== "playing" || this.snapshot.state !== "playing") {
+    if (this.snapshot.state !== "playing") {
       this.clearHoverCandidate();
       this.clearTooltipSource("hover");
       return;
@@ -339,13 +392,12 @@ class PrototypeControllerImpl implements PrototypeController {
   }
 
   private updateHoverTooltip(nowMs: number): boolean {
-    if (this.uiMode !== "compact") {
+    if (!this.inputEnabled || this.uiMode !== "compact") {
       this.clearHoverCandidate();
       return this.clearTooltipSource("hover");
     }
 
-    const screen = this.getRenderScreen();
-    if (screen !== "playing" || this.snapshot.state !== "playing") {
+    if (this.snapshot.state !== "playing") {
       this.clearHoverCandidate();
       return this.clearTooltipSource("hover");
     }
@@ -376,10 +428,7 @@ class PrototypeControllerImpl implements PrototypeController {
   }
 
   private toggleTouchTooltip(tower: TowerName, anchor: Point): void {
-    if (
-      this.tooltipState?.source === "touch" &&
-      this.tooltipState.tower === tower
-    ) {
+    if (this.tooltipState?.source === "touch" && this.tooltipState.tower === tower) {
       this.tooltipState = null;
       this.clearHoverCandidate();
       return;
@@ -394,23 +443,12 @@ class PrototypeControllerImpl implements PrototypeController {
   }
 
   private updateCursor(worldPoint: Point): void {
+    if (!this.inputEnabled) {
+      this.canvas.style.cursor = "default";
+      return;
+    }
+
     const screen = this.getRenderScreen();
-
-    if (screen === "start") {
-      this.canvas.style.cursor =
-        this.hitAreas.startButton && pointInRect(worldPoint, this.hitAreas.startButton)
-          ? "pointer"
-          : "default";
-      return;
-    }
-
-    if (screen === "difficulty") {
-      this.canvas.style.cursor = this.hitAreas.difficultyButtons.some(({ rect }) => pointInRect(worldPoint, rect))
-        ? "pointer"
-        : "default";
-      return;
-    }
-
     if (screen === "game_over" || screen === "victory") {
       const overButton =
         (this.hitAreas.restartButton && pointInRect(worldPoint, this.hitAreas.restartButton)) ||
@@ -475,7 +513,7 @@ class PrototypeControllerImpl implements PrototypeController {
   };
 
   private onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0) {
+    if (event.button !== 0 || !this.inputEnabled) {
       return;
     }
 
@@ -484,43 +522,13 @@ class PrototypeControllerImpl implements PrototypeController {
 
     const screen = this.getRenderScreen();
 
-    if (screen === "start") {
-      if (this.hitAreas.startButton && pointInRect(world, this.hitAreas.startButton)) {
-        this.uiScreen = "difficulty";
-        this.clearAllTooltips();
-        this.render();
-      }
-      return;
-    }
-
-    if (screen === "difficulty") {
-      const hit = findTaggedRectWithValue(
-        world,
-        this.hitAreas.difficultyButtons.map((entry) => ({
-          rect: entry.rect,
-          tag: "difficulty",
-          value: entry.difficulty,
-        })),
-      );
-
-      if (hit) {
-        this.chooseDifficulty(hit.value);
-        this.render();
-      }
-      return;
-    }
-
     if (screen === "game_over" || screen === "victory") {
       if (this.hitAreas.restartButton && pointInRect(world, this.hitAreas.restartButton)) {
         this.applyAction({ type: "restart" });
         this.resetSpeedMultiplier();
-        this.uiScreen = "playing";
         this.clearAllTooltips();
       } else if (this.hitAreas.menuButton && pointInRect(world, this.hitAreas.menuButton)) {
-        this.applyAction({ type: "returnToMenu" });
-        this.resetSpeedMultiplier();
-        this.uiScreen = "start";
-        this.clearAllTooltips();
+        this.returnToMenu();
       }
 
       this.render();
@@ -580,7 +588,7 @@ class PrototypeControllerImpl implements PrototypeController {
   private onContextMenu = (event: MouseEvent): void => {
     event.preventDefault();
 
-    if (this.getRenderScreen() !== "playing" || this.snapshot.state !== "playing") {
+    if (!this.inputEnabled || this.snapshot.state !== "playing") {
       return;
     }
 
@@ -590,43 +598,17 @@ class PrototypeControllerImpl implements PrototypeController {
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    if (!this.inputEnabled) {
+      return;
+    }
+
     const screen = this.getRenderScreen();
-
-    if (screen === "start") {
-      if (event.code === "Enter" || event.code === "Space") {
-        event.preventDefault();
-        this.uiScreen = "difficulty";
-        this.clearAllTooltips();
-        this.render();
-      }
-      return;
-    }
-
-    if (screen === "difficulty") {
-      if (event.code === "Escape") {
-        this.uiScreen = "start";
-        this.clearAllTooltips();
-        this.render();
-        return;
-      }
-
-      const digit = Number.parseInt(event.key, 10);
-      if (Number.isFinite(digit) && digit >= 1 && digit <= DIFFICULTY_ORDER.length) {
-        const difficulty = DIFFICULTY_ORDER[digit - 1];
-        if (difficulty) {
-          this.chooseDifficulty(difficulty);
-          this.render();
-        }
-      }
-      return;
-    }
 
     if (screen === "game_over" || screen === "victory") {
       if (event.code === "Enter" || event.code === "KeyR") {
         event.preventDefault();
         this.applyAction({ type: "restart" });
         this.resetSpeedMultiplier();
-        this.uiScreen = "playing";
         this.clearAllTooltips();
         this.render();
         return;
@@ -634,11 +616,7 @@ class PrototypeControllerImpl implements PrototypeController {
 
       if (event.code === "Escape" || event.code === "KeyM") {
         event.preventDefault();
-        this.applyAction({ type: "returnToMenu" });
-        this.resetSpeedMultiplier();
-        this.uiScreen = "start";
-        this.clearAllTooltips();
-        this.render();
+        this.returnToMenu();
       }
       return;
     }
@@ -673,11 +651,7 @@ class PrototypeControllerImpl implements PrototypeController {
     }
 
     if (event.code === "KeyM") {
-      this.applyAction({ type: "returnToMenu" });
-      this.resetSpeedMultiplier();
-      this.uiScreen = "start";
-      this.clearAllTooltips();
-      this.render();
+      this.returnToMenu();
       return;
     }
 

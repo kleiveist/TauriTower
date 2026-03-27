@@ -12,6 +12,7 @@
 - 🗂️ [Overview](adr/adr.md)
 - 📝 [ADR 0001: Tauri Target Architecture](adr/0001-tauri-target-architecture.md)
 - 📝 [ADR 0002: Repository and Tooling Boundaries](adr/0002-repo-tooling-boundaries.md)
+- 📝 [ADR 0003: Sandbox / Agent-Box Mode Architecture](adr/0003-sandbox-agent-box-mode.md)
 
 ## 📁 DEV
 - 🗂️ [Overview](dev/dev.md)
