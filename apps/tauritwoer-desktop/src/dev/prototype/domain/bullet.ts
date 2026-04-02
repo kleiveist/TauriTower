@@ -7,17 +7,15 @@ export function updateBullet(
   dt: number,
   enemies: EnemySnapshot[],
   enemiesById?: ReadonlyMap<number, EnemySnapshot>,
-): EnemySnapshot[] {
-  const killed: EnemySnapshot[] = [];
-
+): number {
   if (bullet.dead) {
-    return killed;
+    return 0;
   }
 
   const target = enemiesById?.get(bullet.targetEnemyId) ?? enemies.find((enemy) => enemy.id === bullet.targetEnemyId);
   if (!target || target.dead || target.reachedEnd) {
     bullet.dead = true;
-    return killed;
+    return 0;
   }
 
   const directionVector = subtract(target.pos, bullet.pos);
@@ -29,41 +27,39 @@ export function updateBullet(
   const movement = bullet.speed * dt;
 
   if (movement >= distance || distanceBetween(bullet.pos, target.pos) <= target.radius + bullet.radius) {
-    killed.push(...hitBullet(bullet, target, enemies));
+    const reward = hitBullet(bullet, target, enemies);
     bullet.dead = true;
+    return reward;
   } else {
     bullet.pos = addScaled(bullet.pos, direction, movement);
   }
 
-  return killed;
+  return 0;
 }
 
-function hitBullet(
-  bullet: BulletSnapshot,
-  target: EnemySnapshot,
-  enemies: EnemySnapshot[],
-): EnemySnapshot[] {
-  const killed: EnemySnapshot[] = [];
-
+function hitBullet(bullet: BulletSnapshot, target: EnemySnapshot, enemies: EnemySnapshot[]): number {
   if (bullet.bulletType === "single") {
     if (!target.dead && !target.reachedEnd && enemyTakeDamage(target, bullet.damage)) {
-      killed.push(target);
+      return target.reward;
     }
-    return killed;
+    return 0;
   }
 
   if (bullet.bulletType === "stun") {
     if (!target.dead && !target.reachedEnd) {
+      let reward = 0;
       if (enemyTakeDamage(target, bullet.damage)) {
-        killed.push(target);
+        reward += target.reward;
       }
       applySlow(target, bullet.slowFactor, bullet.slowDuration);
+      return reward;
     }
-    return killed;
+    return 0;
   }
 
   if (bullet.bulletType === "splash" || bullet.bulletType === "cannon") {
     const center = { x: target.pos.x, y: target.pos.y };
+    let reward = 0;
 
     for (const enemy of enemies) {
       if (enemy.dead || enemy.reachedEnd) {
@@ -83,10 +79,12 @@ function hitBullet(
       damage *= 1 - enemy.splashResistance;
 
       if (enemyTakeDamage(enemy, damage)) {
-        killed.push(enemy);
+        reward += enemy.reward;
       }
     }
+
+    return reward;
   }
 
-  return killed;
+  return 0;
 }

@@ -1,5 +1,13 @@
 import type { DifficultyProfile, SpawnKey, WavePreview } from "../types";
 
+interface WaveComposition {
+  basic: number;
+  runner: number;
+  brute: number;
+  shield: number;
+  bossStage: number | null;
+}
+
 export function enemyCountForLevel(level: number, difficulty: DifficultyProfile): number {
   // Required wave-size formula: ceil(level * difficultyMultiplier)
   return Math.max(1, Math.ceil(level * difficulty.countMult));
@@ -14,55 +22,12 @@ export function bossKeyForLevel(level: number): SpawnKey {
 }
 
 export function buildWavePlan(level: number, difficulty: DifficultyProfile): SpawnKey[] {
-  const regularCount = enemyCountForLevel(level, difficulty);
-  let runnerCount = 0;
-  let bruteCount = 0;
-  let shieldCount = 0;
-
-  if (level >= 6) {
-    const runnerRatio = Math.min(0.18 + level * 0.008, 0.36);
-    runnerCount = Math.max(1, Math.round(regularCount * runnerRatio));
-  }
-  if (level >= 12) {
-    const bruteRatio = Math.min(0.1 + (level - 12) * 0.005, 0.24);
-    bruteCount = Math.max(1, Math.round(regularCount * bruteRatio));
-  }
-  if (level >= 18) {
-    const shieldRatio = Math.min(0.06 + (level - 18) * 0.004, 0.18);
-    shieldCount = Math.max(1, Math.round(regularCount * shieldRatio));
-  }
-
-  const maxSpecial = regularCount - 1;
-  let specials = runnerCount + bruteCount + shieldCount;
-  if (specials > maxSpecial) {
-    let overflow = specials - maxSpecial;
-
-    const reduce = (current: number): number => {
-      const step = Math.min(current, overflow);
-      overflow -= step;
-      return current - step;
-    };
-
-    bruteCount = reduce(bruteCount);
-    if (overflow > 0) {
-      shieldCount = reduce(shieldCount);
-    }
-    if (overflow > 0) {
-      runnerCount = reduce(runnerCount);
-    }
-
-    specials = runnerCount + bruteCount + shieldCount;
-    if (specials > maxSpecial) {
-      runnerCount = Math.max(0, runnerCount - (specials - maxSpecial));
-    }
-  }
-
-  const basicCount = Math.max(1, regularCount - runnerCount - bruteCount - shieldCount);
+  const composition = computeWaveComposition(level, difficulty);
   const counts: Record<"basic" | "runner" | "brute" | "shield", number> = {
-    basic: basicCount,
-    runner: runnerCount,
-    brute: bruteCount,
-    shield: shieldCount,
+    basic: composition.basic,
+    runner: composition.runner,
+    brute: composition.brute,
+    shield: composition.shield,
   };
 
   const order: Array<"basic" | "runner" | "brute" | "shield"> = [
@@ -85,33 +50,25 @@ export function buildWavePlan(level: number, difficulty: DifficultyProfile): Spa
     }
   }
 
-  if (level % 10 === 0) {
-    plan.push(bossKeyForLevel(level));
+  if (composition.bossStage !== null) {
+    plan.push(`boss_${composition.bossStage}` as SpawnKey);
   }
 
   return plan;
 }
 
 export function previewWaveInfo(level: number, difficulty: DifficultyProfile): WavePreview {
-  const plan = buildWavePlan(level, difficulty);
-  let bossStage: number | null = null;
-
-  for (const enemyType of plan) {
-    const stage = bossStageFromSpawnKey(enemyType);
-    if (stage) {
-      bossStage = stage;
-      break;
-    }
-  }
+  const composition = computeWaveComposition(level, difficulty);
+  const boss = composition.bossStage !== null;
 
   return {
-    count: plan.length,
-    boss: bossStage !== null,
-    bossStage,
-    basic: plan.filter((enemyType) => enemyType === "basic").length,
-    runner: plan.filter((enemyType) => enemyType === "runner").length,
-    brute: plan.filter((enemyType) => enemyType === "brute").length,
-    shield: plan.filter((enemyType) => enemyType === "shield").length,
+    count: composition.basic + composition.runner + composition.brute + composition.shield + (boss ? 1 : 0),
+    boss,
+    bossStage: composition.bossStage,
+    basic: composition.basic,
+    runner: composition.runner,
+    brute: composition.brute,
+    shield: composition.shield,
   };
 }
 
@@ -124,4 +81,57 @@ export function bossStageFromSpawnKey(spawnKey: SpawnKey): number | null {
     return null;
   }
   return stage;
+}
+
+function computeWaveComposition(level: number, difficulty: DifficultyProfile): WaveComposition {
+  const regularCount = enemyCountForLevel(level, difficulty);
+  let runner = 0;
+  let brute = 0;
+  let shield = 0;
+
+  if (level >= 6) {
+    const runnerRatio = Math.min(0.18 + level * 0.008, 0.36);
+    runner = Math.max(1, Math.round(regularCount * runnerRatio));
+  }
+  if (level >= 12) {
+    const bruteRatio = Math.min(0.1 + (level - 12) * 0.005, 0.24);
+    brute = Math.max(1, Math.round(regularCount * bruteRatio));
+  }
+  if (level >= 18) {
+    const shieldRatio = Math.min(0.06 + (level - 18) * 0.004, 0.18);
+    shield = Math.max(1, Math.round(regularCount * shieldRatio));
+  }
+
+  const maxSpecial = regularCount - 1;
+  let specials = runner + brute + shield;
+  if (specials > maxSpecial) {
+    let overflow = specials - maxSpecial;
+
+    const reduce = (current: number): number => {
+      const step = Math.min(current, overflow);
+      overflow -= step;
+      return current - step;
+    };
+
+    brute = reduce(brute);
+    if (overflow > 0) {
+      shield = reduce(shield);
+    }
+    if (overflow > 0) {
+      runner = reduce(runner);
+    }
+
+    specials = runner + brute + shield;
+    if (specials > maxSpecial) {
+      runner = Math.max(0, runner - (specials - maxSpecial));
+    }
+  }
+
+  return {
+    basic: Math.max(1, regularCount - runner - brute - shield),
+    runner,
+    brute,
+    shield,
+    bossStage: level % 10 === 0 ? bossStageForLevel(level) : null,
+  };
 }

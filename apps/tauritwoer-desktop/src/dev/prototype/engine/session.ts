@@ -58,7 +58,13 @@ class GameSessionImpl implements GameSession {
 
   private readonly state: MutableSessionState;
 
+  private readonly enemiesById = new Map<number, GameSnapshot["enemies"][number]>();
+
   private autoWaveCountdown = -1;
+
+  private wavePreviewDirty = false;
+
+  private towerPricesDirty = false;
 
   constructor(options: GameSessionOptions) {
     this.rng = pickRng(options.rng, options.seed);
@@ -145,6 +151,8 @@ class GameSessionImpl implements GameSession {
     this.state.nextBulletId = 1;
     this.state.waveSpawnIndex = 0;
     this.autoWaveCountdown = -1;
+    this.wavePreviewDirty = false;
+    this.towerPricesDirty = false;
   }
 
   applyAction(action: GameAction): void {
@@ -159,6 +167,7 @@ class GameSessionImpl implements GameSession {
       }
       case "setMode": {
         this.state.snapshot.mode = action.mode;
+        this.markWavePreviewDirty();
         break;
       }
       case "setMap": {
@@ -167,6 +176,7 @@ class GameSessionImpl implements GameSession {
       }
       case "setSandboxConfig": {
         this.state.snapshot.sandboxConfig = cloneSandboxConfig(action.config);
+        this.markWavePreviewDirty();
         break;
       }
       case "startWave": {
@@ -215,7 +225,7 @@ class GameSessionImpl implements GameSession {
       }
     }
 
-    this.refreshWavePreview();
+    this.syncDerivedState();
   }
 
   tick(dtSeconds: number): void {
@@ -227,7 +237,7 @@ class GameSessionImpl implements GameSession {
 
     if (snapshot.state !== "playing") {
       this.updateMessageTimer(dtSeconds);
-      this.refreshWavePreview();
+      this.syncDerivedState();
       return;
     }
 
@@ -276,28 +286,20 @@ class GameSessionImpl implements GameSession {
       );
     }
 
-    const enemiesById = new Map<number, (typeof snapshot.enemies)[number]>();
+    this.enemiesById.clear();
     for (const enemy of snapshot.enemies) {
-      enemiesById.set(enemy.id, enemy);
+      this.enemiesById.set(enemy.id, enemy);
     }
 
     for (const bullet of snapshot.bullets) {
-      const killed = updateBullet(bullet, dtSeconds, snapshot.enemies, enemiesById);
-      if (killed.length === 0) {
-        continue;
-      }
-
-      const uniqueKills = new Map<number, number>();
-      for (const enemy of killed) {
-        uniqueKills.set(enemy.id, enemy.reward);
-      }
-      for (const reward of uniqueKills.values()) {
+      const reward = updateBullet(bullet, dtSeconds, snapshot.enemies, this.enemiesById);
+      if (reward > 0) {
         snapshot.money += reward;
       }
     }
 
-    snapshot.enemies = snapshot.enemies.filter((enemy) => !enemy.dead);
-    snapshot.bullets = snapshot.bullets.filter((bullet) => !bullet.dead);
+    compactDeadEntries(snapshot.enemies);
+    compactDeadEntries(snapshot.bullets);
 
     if (
       snapshot.waveActive &&
@@ -308,6 +310,8 @@ class GameSessionImpl implements GameSession {
       snapshot.wavePlan = [];
       this.state.waveSpawnIndex = 0;
       snapshot.level += 1;
+      this.markWavePreviewDirty();
+      this.markTowerPricesDirty();
 
       if (snapshot.level > snapshot.maxLevel) {
         snapshot.state = "victory";
@@ -326,7 +330,7 @@ class GameSessionImpl implements GameSession {
       this.autoWaveCountdown = -1;
     }
 
-    this.refreshWavePreview();
+    this.syncDerivedState();
   }
 
   getSnapshot(): GameSnapshot {
@@ -405,19 +409,35 @@ class GameSessionImpl implements GameSession {
     this.state.snapshot.messageTimer = seconds;
   }
 
-  private refreshWavePreview(): void {
+  private markWavePreviewDirty(): void {
+    this.wavePreviewDirty = true;
+  }
+
+  private markTowerPricesDirty(): void {
+    this.towerPricesDirty = true;
+  }
+
+  private syncDerivedState(): void {
     const snapshot = this.state.snapshot;
-    snapshot.nextWavePreview = this.previewFor(
-      snapshot.level,
-      snapshot.mode,
-      this.state.difficulty,
-      snapshot.sandboxConfig,
-    );
-    snapshot.towerPrices = buildDisplayedTowerPriceMap(
-      snapshot.level,
-      snapshot.difficultyName,
-      this.state.storedTowerPrices,
-    );
+
+    if (this.wavePreviewDirty) {
+      snapshot.nextWavePreview = this.previewFor(
+        snapshot.level,
+        snapshot.mode,
+        this.state.difficulty,
+        snapshot.sandboxConfig,
+      );
+      this.wavePreviewDirty = false;
+    }
+
+    if (this.towerPricesDirty) {
+      snapshot.towerPrices = buildDisplayedTowerPriceMap(
+        snapshot.level,
+        snapshot.difficultyName,
+        this.state.storedTowerPrices,
+      );
+      this.towerPricesDirty = false;
+    }
   }
 
   private startWave(): void {
@@ -608,9 +628,23 @@ class GameSessionImpl implements GameSession {
       towerName,
       this.state.storedTowerPrices,
     );
+    this.markTowerPricesDirty();
     snapshot.selectedTowerName = null;
     this.showMessage({ code: "tower_placed", tower: towerName }, 1.2);
   }
+}
+
+function compactDeadEntries<T extends { dead: boolean }>(entries: T[]): void {
+  let next = 0;
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i];
+    if (entry.dead) {
+      continue;
+    }
+    entries[next] = entry;
+    next += 1;
+  }
+  entries.length = next;
 }
 
 function createInitialSnapshot(

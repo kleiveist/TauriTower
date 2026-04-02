@@ -171,8 +171,7 @@ export function buildSandboxWavePlan(round: number, config: SandboxConfig): Spaw
 
   for (const rawSlot of config.slots) {
     const slot = normalizeSandboxSlot(rawSlot);
-    const validation = validateSandboxSlot(slot);
-    if (!validation.valid) {
+    if (!isNormalizedSlotSpawnable(slot)) {
       continue;
     }
 
@@ -182,7 +181,7 @@ export function buildSandboxWavePlan(round: number, config: SandboxConfig): Spaw
     }
 
     if (slot.enemyType === "boss") {
-      const key = `boss_${slot.bossStage}` as SpawnKey;
+      const key = toBossSpawnKey(slot.bossStage);
       for (let i = 0; i < count; i += 1) {
         plan.push(key);
       }
@@ -198,27 +197,73 @@ export function buildSandboxWavePlan(round: number, config: SandboxConfig): Spaw
 }
 
 export function previewSandboxWaveInfo(round: number, config: SandboxConfig): WavePreview {
-  const plan = buildSandboxWavePlan(round, config);
-
   let bossStage: number | null = null;
-  for (const key of plan) {
-    if (!key.startsWith("boss_")) {
+  let count = 0;
+  let basic = 0;
+  let runner = 0;
+  let brute = 0;
+  let shield = 0;
+
+  for (const rawSlot of config.slots) {
+    const slot = normalizeSandboxSlot(rawSlot);
+    if (!isNormalizedSlotSpawnable(slot)) {
       continue;
     }
-    const stage = Number.parseInt(key.slice(5), 10);
-    bossStage = Math.max(1, Math.min(stage, MAX_BOSS_STAGE));
-    break;
+
+    const slotCount = sandboxSlotSpawnCount(slot, round);
+    if (slotCount <= 0) {
+      continue;
+    }
+
+    count += slotCount;
+
+    if (slot.enemyType === "boss") {
+      if (bossStage === null) {
+        bossStage = clampInt(slot.bossStage, 1, MAX_BOSS_STAGE);
+      }
+      continue;
+    }
+
+    if (slot.enemyType === "basic") {
+      basic += slotCount;
+      continue;
+    }
+    if (slot.enemyType === "runner") {
+      runner += slotCount;
+      continue;
+    }
+    if (slot.enemyType === "brute") {
+      brute += slotCount;
+      continue;
+    }
+    shield += slotCount;
   }
 
   return {
-    count: plan.length,
+    count,
     boss: bossStage !== null,
     bossStage,
-    basic: plan.filter((key) => key === "basic").length,
-    runner: plan.filter((key) => key === "runner").length,
-    brute: plan.filter((key) => key === "brute").length,
-    shield: plan.filter((key) => key === "shield").length,
+    basic,
+    runner,
+    brute,
+    shield,
   };
+}
+
+function isNormalizedSlotSpawnable(slot: SandboxSlot): boolean {
+  if (!slot.id.trim()) {
+    return false;
+  }
+
+  if (slot.enemyType !== "boss") {
+    return true;
+  }
+
+  return Number.isFinite(slot.bossStage) && slot.bossStage >= 1 && slot.bossStage <= MAX_BOSS_STAGE;
+}
+
+function toBossSpawnKey(stage: number): SpawnKey {
+  return `boss_${clampInt(stage, 1, MAX_BOSS_STAGE)}` as SpawnKey;
 }
 
 function clampInt(value: number, min: number, max: number): number {

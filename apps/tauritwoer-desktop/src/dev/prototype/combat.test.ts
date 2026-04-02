@@ -84,11 +84,12 @@ describe("combat systems", () => {
       dead: false,
     };
 
-    updateBullet(bullet, 0.016, [target, nearby, far]);
+    const reward = updateBullet(bullet, 0.016, [target, nearby, far]);
 
     expect(target.hp).toBeCloseTo(380, 6);
     expect(nearby.hp).toBeCloseTo(430, 6);
     expect(far.hp).toBe(500);
+    expect(reward).toBe(0);
     expect(bullet.dead).toBe(true);
   });
 
@@ -112,9 +113,34 @@ describe("combat systems", () => {
     const enemies = [target];
     const enemyById = new Map<number, EnemySnapshot>([[target.id, target]]);
 
-    updateBullet(bullet, 0.016, enemies, enemyById);
+    const reward = updateBullet(bullet, 0.016, enemies, enemyById);
 
     expect(target.hp).toBeLessThan(140);
+    expect(reward).toBe(0);
+    expect(bullet.dead).toBe(true);
+  });
+
+  it("returns direct reward sum when a bullet kills enemies", () => {
+    const target = makeEnemy(21, { hp: 25, maxHp: 25, reward: 17, pos: { x: 160, y: 160 } });
+    const bullet: BulletSnapshot = {
+      id: 88,
+      pos: { x: 160, y: 160 },
+      targetEnemyId: 21,
+      damage: 50,
+      speed: 600,
+      color: [255, 220, 80],
+      bulletType: "single",
+      splashRadius: 0,
+      slowFactor: 1,
+      slowDuration: 0,
+      radius: 4,
+      dead: false,
+    };
+
+    const reward = updateBullet(bullet, 0.016, [target]);
+
+    expect(reward).toBe(17);
+    expect(target.dead).toBe(true);
     expect(bullet.dead).toBe(true);
   });
 });

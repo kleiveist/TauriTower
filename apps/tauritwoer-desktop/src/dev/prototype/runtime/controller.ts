@@ -146,6 +146,8 @@ class PrototypeControllerImpl implements PrototypeController {
 
   private running = false;
 
+  private renderPending = false;
+
   private lastFrameMs = 0;
 
   private accumulator = 0;
@@ -171,7 +173,7 @@ class PrototypeControllerImpl implements PrototypeController {
       const image = new Image();
       image.decoding = "async";
       image.onload = () => {
-        this.render();
+        this.requestRender();
       };
       image.src = options.iconSrc;
       this.gameIcon = image;
@@ -192,7 +194,8 @@ class PrototypeControllerImpl implements PrototypeController {
     this.canvas.addEventListener("contextmenu", this.onContextMenu);
     window.addEventListener("keydown", this.onKeyDown);
 
-    this.render();
+    this.requestRender();
+    this.flushRender();
     this.animationFrame = window.requestAnimationFrame(this.onAnimationFrame);
   }
 
@@ -229,7 +232,7 @@ class PrototypeControllerImpl implements PrototypeController {
       this.clearAllTooltips();
     }
 
-    this.render();
+    this.requestRender();
   }
 
   setInputEnabled(enabled: boolean): void {
@@ -244,6 +247,8 @@ class PrototypeControllerImpl implements PrototypeController {
       this.clearAllTooltips();
       this.canvas.style.cursor = "default";
     }
+
+    this.requestRender();
   }
 
   setPresentation(preferences: PresentationPreferences): void {
@@ -267,7 +272,7 @@ class PrototypeControllerImpl implements PrototypeController {
     }
 
     if (changed) {
-      this.render();
+      this.requestRender();
     }
   }
 
@@ -284,7 +289,7 @@ class PrototypeControllerImpl implements PrototypeController {
     this.pauseConfirmAction = null;
     this.clearAllTooltips();
     this.inputEnabled = true;
-    this.render();
+    this.requestRender();
   }
 
   getSnapshot(): GameSnapshot {
@@ -317,6 +322,23 @@ class PrototypeControllerImpl implements PrototypeController {
     this.updateCursor(this.pointerWorld);
   }
 
+  private requestRender(): void {
+    if (!this.running) {
+      this.renderPending = false;
+      this.render();
+      return;
+    }
+    this.renderPending = true;
+  }
+
+  private flushRender(): void {
+    if (!this.renderPending) {
+      return;
+    }
+    this.renderPending = false;
+    this.render();
+  }
+
   private applyAction(action: GameAction): void {
     this.session.applyAction(action);
     this.snapshot = this.session.getLiveSnapshot() as GameSnapshot;
@@ -334,7 +356,7 @@ class PrototypeControllerImpl implements PrototypeController {
     this.pauseConfirmAction = null;
     this.clearAllTooltips();
     this.onReturnToMenu?.();
-    this.render();
+    this.requestRender();
   }
 
   private setPaused(nextPaused: boolean): void {
@@ -348,7 +370,7 @@ class PrototypeControllerImpl implements PrototypeController {
     }
 
     this.clearAllTooltips();
-    this.render();
+    this.requestRender();
   }
 
   private togglePause(): void {
@@ -698,8 +720,9 @@ class PrototypeControllerImpl implements PrototypeController {
     this.maybeWarnDebugOverload(nowMs);
 
     if (steps > 0 || hoverChanged) {
-      this.render();
+      this.requestRender();
     }
+    this.flushRender();
 
     this.animationFrame = window.requestAnimationFrame(this.onAnimationFrame);
   };
@@ -708,14 +731,14 @@ class PrototypeControllerImpl implements PrototypeController {
     this.pointerWorld = this.worldFromPointer(event);
     this.beginHoverTooltip(this.pointerWorld, performance.now());
     this.updateCursor(this.pointerWorld);
-    this.render();
+    this.requestRender();
   };
 
   private onPointerLeave = (): void => {
     this.pointerWorld = { x: -1000, y: -1000 };
     this.clearHoverCandidate();
     if (this.clearTooltipSource("hover")) {
-      this.render();
+      this.requestRender();
     } else {
       this.updateCursor(this.pointerWorld);
     }
@@ -740,9 +763,10 @@ class PrototypeControllerImpl implements PrototypeController {
         this.clearAllTooltips();
       } else if (this.hitAreas.menuButton && pointInRect(world, this.hitAreas.menuButton)) {
         this.returnToMenu();
+        return;
       }
 
-      this.render();
+      this.requestRender();
       return;
     }
 
@@ -755,7 +779,7 @@ class PrototypeControllerImpl implements PrototypeController {
       if (this.pauseConfirmAction) {
         if (this.hitAreas.pauseConfirmCancelButton && pointInRect(world, this.hitAreas.pauseConfirmCancelButton)) {
           this.pauseConfirmAction = null;
-          this.render();
+          this.requestRender();
           return;
         }
 
@@ -769,7 +793,7 @@ class PrototypeControllerImpl implements PrototypeController {
             this.returnToMenu();
             return;
           }
-          this.render();
+          this.requestRender();
           return;
         }
       } else {
@@ -780,18 +804,18 @@ class PrototypeControllerImpl implements PrototypeController {
 
         if (this.hitAreas.pauseRestartButton && pointInRect(world, this.hitAreas.pauseRestartButton)) {
           this.pauseConfirmAction = "restart";
-          this.render();
+          this.requestRender();
           return;
         }
 
         if (this.hitAreas.pauseMenuButton && pointInRect(world, this.hitAreas.pauseMenuButton)) {
           this.pauseConfirmAction = "menu";
-          this.render();
+          this.requestRender();
           return;
         }
       }
 
-      this.render();
+      this.requestRender();
       return;
     }
 
@@ -813,7 +837,7 @@ class PrototypeControllerImpl implements PrototypeController {
           y: rect.y + rect.h * 0.5,
         });
         this.applyAction({ type: "selectTower", tower: towerHit.value.tower });
-        this.render();
+        this.requestRender();
         return;
       }
 
@@ -822,24 +846,24 @@ class PrototypeControllerImpl implements PrototypeController {
 
     if (this.hitAreas.startWaveButton && pointInRect(world, this.hitAreas.startWaveButton)) {
       this.applyAction({ type: "startWave" });
-      this.render();
+      this.requestRender();
       return;
     }
 
     if (towerHit) {
       this.applyAction({ type: "selectTower", tower: towerHit.value.tower });
-      this.render();
+      this.requestRender();
       return;
     }
 
     if (world.x >= 0 && world.x <= FIELD_W) {
       this.applyAction({ type: "placeTower", position: world });
-      this.render();
+      this.requestRender();
       return;
     }
 
     if (clearedTouchTooltip) {
-      this.render();
+      this.requestRender();
     }
   };
 
@@ -852,7 +876,7 @@ class PrototypeControllerImpl implements PrototypeController {
 
     this.applyAction({ type: "clearSelection" });
     this.clearTooltipSource("touch");
-    this.render();
+    this.requestRender();
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
@@ -870,7 +894,7 @@ class PrototypeControllerImpl implements PrototypeController {
         this.paused = false;
         this.pauseConfirmAction = null;
         this.clearAllTooltips();
-        this.render();
+        this.requestRender();
         return;
       }
 
@@ -885,7 +909,7 @@ class PrototypeControllerImpl implements PrototypeController {
       event.preventDefault();
       if (this.paused && this.pauseConfirmAction) {
         this.pauseConfirmAction = null;
-        this.render();
+        this.requestRender();
         return;
       }
       this.togglePause();
@@ -899,21 +923,21 @@ class PrototypeControllerImpl implements PrototypeController {
     if (isSpeedIncreaseHotkey(event)) {
       event.preventDefault();
       this.speedMultiplier = increaseSpeedMultiplier(this.speedMultiplier);
-      this.render();
+      this.requestRender();
       return;
     }
 
     if (isSpeedDecreaseHotkey(event)) {
       event.preventDefault();
       this.speedMultiplier = decreaseSpeedMultiplier(this.speedMultiplier);
-      this.render();
+      this.requestRender();
       return;
     }
 
     if (event.code === "Space") {
       event.preventDefault();
       this.applyAction({ type: "startWave" });
-      this.render();
+      this.requestRender();
       return;
     }
 
@@ -921,7 +945,7 @@ class PrototypeControllerImpl implements PrototypeController {
       this.applyAction({ type: "restart" });
       this.resetSpeedMultiplier();
       this.clearAllTooltips();
-      this.render();
+      this.requestRender();
       return;
     }
 
@@ -934,7 +958,7 @@ class PrototypeControllerImpl implements PrototypeController {
       event.preventDefault();
       this.applyAction({ type: "clearSelection" });
       this.clearTooltipSource("touch");
-      this.render();
+      this.requestRender();
       return;
     }
 
@@ -942,7 +966,7 @@ class PrototypeControllerImpl implements PrototypeController {
     if (tower) {
       this.applyAction({ type: "selectTower", tower });
       this.clearTooltipSource("touch");
-      this.render();
+      this.requestRender();
     }
   };
 }
